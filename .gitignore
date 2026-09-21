@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Production / Executables (optional, or keep TMO.exe if releasing)
+*.log
+debug.log
+
+# User settings and local state
+# settings.json
+.widget-bounds.json
+.soundstage_app/
+
+# OS and IDE caches
+.DS_Store
+Thumbs.db
+*.tmp
+.vscode/
+.idea/

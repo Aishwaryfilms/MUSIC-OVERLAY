@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TMO — Throttl Music Overlay</title>
+  <link rel="icon" type="image/png" href="/assets/icon.png" />
+  <link rel="stylesheet" href="/css/dashboard.css" />
+</head>
+<body>
+
+  <div class="macos-window">
+    
+    <!-- Windows Titlebar -->
+    <div class="win-titlebar">
+      <div class="titlebar-brand">
+        <!-- Custom TMO AB Logo SVG -->
+        <svg class="titlebar-icon" width="18" height="18" viewBox="0 0 100 100" fill="none">
+          <rect x="2.5" y="2.5" width="95" height="95" rx="24" fill="#12131a" stroke="rgba(255,255,255,0.15)" stroke-width="4"/>
+          <path d="M 20 70 L 30 70 L 39 33 L 30 33 Z" fill="#ffffff" />
+          <path d="M 33 27 L 43 27 L 50 49 L 41 49 Z" fill="#ffffff" />
+          <path d="M 43 54 L 52 54 L 57 70 L 47 70 Z" fill="#ffffff" />
+          <rect x="29" y="46" width="13" height="4.5" rx="1.5" fill="#10b981" />
+          <path d="M 57 27 H 65 V 45 H 57 Z" fill="#ffffff" />
+          <path d="M 57 51 H 65 V 70 H 57 Z" fill="#ffffff" />
+          <path d="M 66 27 H 75 C 81 27 84.5 30 84.5 36 C 84.5 42 81 45 75 45 H 66 V 27 Z M 72.5 33 H 68 V 39 H 72.5 C 74.5 39 76.5 38 76.5 36 C 76.5 34 74.5 33 72.5 33 Z" fill="#ffffff" fill-rule="evenodd" />
+          <path d="M 66 51 H 76 C 82.5 51 86 54.5 86 61 C 86 67.5 82 70 75 70 H 66 V 51 Z M 73 57 H 68 V 64 H 73 C 75.5 64 78 63 78 60.5 C 78 58 75.5 57 73 57 Z" fill="#ffffff" fill-rule="evenodd" />
+          <circle cx="54" cy="48" r="3" fill="#10b981" />
+        </svg>
+        <span class="titlebar-label">TMO — Throttl Music Overlay</span>
+      </div>
+
+      <div class="win-controls">
+        <button class="win-ctrl-btn" id="btn-win-min" title="Minimize">
+          <svg width="11" height="11" viewBox="0 0 11 11"><path d="M0 5.5h11" stroke="currentColor" stroke-width="1.2"/></svg>
+        </button>
+        <button class="win-ctrl-btn" id="btn-win-max" title="Maximize">
+          <svg width="11" height="11" viewBox="0 0 11 11"><rect x="0.5" y="0.5" width="10" height="10" stroke="currentColor" stroke-width="1.2" fill="none" rx="1.5"/></svg>
+        </button>
+        <button class="win-ctrl-btn win-close" id="btn-win-close" title="Close">
+          <svg width="11" height="11" viewBox="0 0 11 11"><path d="M1 1l9 9M10 1l-9 9" stroke="currentColor" stroke-width="1.3"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- App Main Body: Sidebar + Stage -->
+    <div class="macos-body">
+      
+      <!-- Left Sidebar -->
+      <aside class="macos-sidebar">
+        
+        <div>
+          <!-- Group 1: Source Selection -->
+          <div class="sidebar-section">
+            <div class="sidebar-heading">Audio Source</div>
+            <div class="source-pills">
+              <button class="source-pill active" data-source="auto">
+                <div class="source-pill-icon" style="background: linear-gradient(135deg, #10b981, #06b6d4);">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+                </div>
+                <span>Auto Detect</span>
+              </button>
+              <button class="source-pill" data-source="spotify">
+                <div class="source-pill-icon" style="background: #1db954;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+                </div>
+                <span>Spotify</span>
+              </button>
+              <button class="source-pill" data-source="applemusic">
+                <div class="source-pill-icon" style="background: linear-gradient(135deg, #fc3c44, #d93a5c);">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M23.994 6.124a9.23 9.23 0 00-.24-2.19c-.317-1.31-1.062-2.31-2.18-3.043a5.022 5.022 0 00-1.877-.726 10.496 10.496 0 00-1.564-.15c-.04-.003-.083-.01-.124-.013H5.986c-.152.01-.303.017-.455.026-.747.043-1.49.123-2.193.4-1.336.53-2.3 1.452-2.865 2.78-.192.448-.292.925-.363 1.408-.056.392-.088.785-.1 1.18 0 .032-.007.062-.01.093v12.223c.01.14.017.283.027.424.05.815.154 1.624.497 2.373.65 1.42 1.738 2.353 3.234 2.802.42.127.856.187 1.297.228.485.044.972.062 1.46.066 4.028.003 8.053.003 12.082 0 .478-.002.957-.02 1.432-.06.518-.045 1.028-.13 1.52-.3 1.475-.51 2.545-1.467 3.167-2.907.177-.41.284-.84.353-1.277.088-.558.128-1.12.148-1.684.002-.063.008-.124.01-.187V5.992c-.01-.04-.01-.26-.01-.3l.003.432zM16.95 12.468c0 2.508-.7 3.676-1.404 4.46a3.97 3.97 0 01-1.712 1.137c-.652.242-1.108.15-1.86-.085-.467-.145-.995-.31-1.7-.33h-.042c-.722.016-1.262.18-1.737.325-.746.228-1.196.318-1.834.086a3.978 3.978 0 01-1.73-1.14c-.707-.79-1.407-1.96-1.407-4.46 0-3.3 2.396-5.27 4.254-5.348.758-.027 1.482.244 2.116.486.498.19.952.363 1.3.363.326 0 .77-.17 1.272-.364.626-.243 1.344-.518 2.1-.5l.04.002c1.042.038 2.675.485 3.74 2.162a.183.183 0 01-.037.235c-.878.672-1.56 1.706-1.56 3.177l.001-.006z"/><path d="M14.462 3.24c.656-.834 1.082-1.964.964-3.24-1.024.062-2.278.736-2.985 1.576-.636.754-1.183 1.886-1.042 3.007 1.137.044 2.322-.578 3.063-1.343z"/></svg>
+                </div>
+                <span>Apple Music</span>
+              </button>
+              <button class="source-pill" data-source="youtubemusic">
+                <div class="source-pill-icon" style="background: #ff0000;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="#fff"><path d="M12 0C5.376 0 0 5.376 0 12s5.376 12 12 12 12-5.376 12-12S18.624 0 12 0zm4.872 12.36l-6.36 3.672a.416.416 0 01-.624-.36V8.328a.416.416 0 01.624-.36l6.36 3.672a.418.418 0 010 .72z"/></svg>
+                </div>
+                <span>YouTube Music</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Group 2: Output Targets -->
+          <div class="sidebar-section">
+            <div class="sidebar-heading">Display Output</div>
+            <div class="sidebar-nav">
+              <button class="sidebar-item" id="btn-nav-desktop-hud">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+                <span>Float on Desktop</span>
+              </button>
+              <button class="sidebar-item" id="btn-nav-copy-obs">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                <span>Copy OBS Link</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Group 3: Settings -->
+          <div class="sidebar-section">
+            <div class="sidebar-heading">Preferences</div>
+            <div class="sidebar-nav">
+              <button class="sidebar-item" id="btn-open-settings">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>Widget Settings</span>
+              </button>
+              <button class="sidebar-item" id="btn-open-script">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                <span>AI Style Injector</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="sidebar-footer">
+          <div class="footer-title">TMO v1.0</div>
+          <div class="footer-desc">Created by Throttl</div>
+        </div>
+
+      </aside>
+
+      <!-- Main Stage -->
+      <main class="macos-stage">
+        
+        <!-- Now Playing Header Banner -->
+        <div class="now-playing-banner">
+          <div class="banner-left">
+            <div class="banner-art">
+              <img id="banner-cover" src="/api/current-art" alt="Art" />
+            </div>
+            <div class="banner-meta">
+              <div class="banner-title" id="banner-title">Waiting for audio playback...</div>
+              <div class="banner-artist" id="banner-artist">Spotify • Apple Music • YouTube Music</div>
+            </div>
+          </div>
+
+          <div class="banner-right">
+            <div class="banner-status-chip" id="banner-status-chip">
+              <div class="pulse-dot" id="live-dot"></div>
+              <span id="live-status-text">LISTENING</span>
+            </div>
+            <div class="banner-badge" id="banner-service-badge">
+              <span id="banner-service-name">AUTO DETECT</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Center Stage Preview Box -->
+        <div class="stage-preview-box checker" id="stage-box">
+          <iframe id="preview-frame" class="preview-stage-iframe" src="/overlay"></iframe>
+        </div>
+
+        <!-- Bottom Controls Bar -->
+        <div class="stage-controls-bar">
+          
+          <!-- Layout Switcher -->
+          <div class="layout-switcher" id="layout-switcher">
+            <button class="chip-btn active" data-theme="vinyl">Floating Vinyl</button>
+            <button class="chip-btn" data-theme="card" data-orientation="horizontal">Card Banner</button>
+            <button class="chip-btn" data-theme="card" data-orientation="vertical">Vertical Dock</button>
+            <button class="chip-btn" data-theme="pill">Capsule</button>
+            <button class="chip-btn" data-theme="cassette">Cassette Tape</button>
+            <div id="custom-chips-container" style="display: contents;"></div>
+          </div>
+
+          <!-- Quick Action Buttons -->
+          <div class="action-btn-group">
+            <button class="btn-apple" id="btn-launch-hud" title="Toggle floating widget on your desktop">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
+              <span id="float-btn-text">Float on Desktop</span>
+            </button>
+            <button class="btn-apple-outline" id="btn-copy-master" title="Copy OBS Browser Source link">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              <span id="copy-btn-text">Copy Link</span>
+            </button>
+          </div>
+
+        </div>
+
+      </main>
+
+    </div>
+
+    <!-- Right Settings Drawer (Opens cleanly over stage) -->
+    <div class="settings-drawer" id="settings-drawer">
+      <div class="drawer-header">
+        <div class="drawer-title" id="drawer-title">Widget Settings</div>
+        <button class="close-drawer-btn" id="btn-close-drawer">✕</button>
+      </div>
+
+      <!-- Settings Content -->
+      <div id="drawer-settings-content">
+        
+        <div class="drawer-item">
+          <div>
+            <div class="drawer-label">Float on Desktop (Always on Top)</div>
+            <div class="drawer-desc">Keep visible over apps. Turn off for clean OBS capture.</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-float" />
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div class="drawer-item">
+          <div>
+            <div class="drawer-label">Auto-Hide When Paused</div>
+            <div class="drawer-desc">Vanishes widget when gaming or paused</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-autohide" />
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div class="drawer-item">
+          <div>
+            <div class="drawer-label">Progress Bar</div>
+            <div class="drawer-desc">Show timeline bar</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-progress" checked />
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div class="drawer-item">
+          <div>
+            <div class="drawer-label">Wavy Visualizer</div>
+            <div class="drawer-desc">Show dynamic 60fps audio waves</div>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="toggle-wave" checked />
+            <span class="slider round"></span>
+          </label>
+        </div>
+
+        <div class="drawer-item">
+          <div>
+            <div class="drawer-label">OBS Background Mode</div>
+            <div class="drawer-desc">Transparent for WGC, or Chroma Key</div>
+          </div>
+          <div class="bg-mode-strip">
+            <button class="bg-chip active" data-bg="transparent">Transparent</button>
+            <button class="bg-chip" data-bg="chroma-green">Green</button>
+            <button class="bg-chip" data-bg="chroma-magenta">Magenta</button>
+          </div>
+        </div>
+
+        <div class="drawer-item">
+          <div>
+            <div class="drawer-label">Accent Color</div>
+          </div>
+          <div class="swatches-strip">
+            <div class="swatch-circle active" style="background: #1db954;" data-color="#1db954"></div>
+            <div class="swatch-circle" style="background: #fa243c;" data-color="#fa243c"></div>
+            <div class="swatch-circle" style="background: #3b82f6;" data-color="#3b82f6"></div>
+            <div class="swatch-circle" style="background: #ffffff;" data-color="#ffffff"></div>
+          </div>
+        </div>
+
+        <button class="btn-apple" id="btn-save-drawer" style="width: 100%; justify-content: center; margin-top: 10px;">Save Settings</button>
+      </div>
+
+      <!-- AI Script Content -->
+      <div id="drawer-script-content" style="display: none; flex-direction: column; gap: 12px; height: 100%; overflow-y: auto;">
+        
+        <!-- Copyable AI Context Prompt Box -->
+        <div class="ai-prompt-box">
+          <div class="ai-prompt-box-header">
+            <div class="ai-prompt-tag">AI Context Template</div>
+            <button class="btn-copy-prompt" id="btn-copy-ai-prompt">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              <span id="copy-prompt-text">Copy Context Prompt</span>
+            </button>
+          </div>
+          <div class="ai-prompt-preview">
+            Copy this template into ChatGPT, Claude, or Gemini, then add your design instructions at the end. It details the software context, DOM structure, image plumbing, and strict constraints.
+          </div>
+        </div>
+
+        <div>
+          <div class="drawer-desc" style="margin-bottom: 6px;">Style Name (optional):</div>
+          <input type="text" id="custom-theme-name" class="theme-name-input" placeholder="e.g. Flowing River, Cyberpunk Neon" />
+        </div>
+
+        <div>
+          <div class="drawer-desc" style="margin-bottom: 6px;">Paste AI-generated CSS below:</div>
+          <textarea id="custom-css-input" class="script-area" placeholder="/* Paste AI-generated CSS here */&#10;#theme-root.theme-custom {&#10;  /* Custom styling for layout container */&#10;}&#10;#track-title {&#10;  font-size: 20px;&#10;}"></textarea>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <button class="btn-apple" id="btn-deploy-script" style="width: 100%; justify-content: center;">Deploy &amp; Activate Custom Layout</button>
+          <button class="btn-apple-outline" id="btn-save-script" style="width: 100%; justify-content: center;">Save to Layouts (Don't Activate)</button>
+          <button class="btn-copy-prompt" id="btn-clear-script" style="width: 100%; justify-content: center; padding: 6px; color: rgba(255,255,255,0.6);">Clear Custom CSS</button>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <div id="toast">Link copied to clipboard</div>
+
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>

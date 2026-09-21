@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TMO — Throttl Music Overlay</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: transparent;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Plus Jakarta Sans", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .splash-card {
+      width: 440px;
+      height: 250px;
+      background: rgba(12, 13, 17, 0.96);
+      backdrop-filter: blur(48px);
+      -webkit-backdrop-filter: blur(48px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 26px; /* Natural Apple squircle curve */
+      box-shadow: 
+        0 32px 70px rgba(0, 0, 0, 0.85),
+        0 10px 25px rgba(0, 0, 0, 0.5),
+        0 0 50px rgba(16, 185, 129, 0.12),
+        inset 0 1px 1px 0 rgba(255, 255, 255, 0.18),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 28px 24px;
+      position: relative;
+      overflow: hidden;
+      animation: card-appear 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes card-appear {
+      from { opacity: 0; transform: scale(0.92); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    /* Logo Container with concentric curvature */
+    .splash-logo-wrap {
+      width: 74px;
+      height: 74px;
+      border-radius: 20px;
+      overflow: hidden;
+      margin-bottom: 14px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6), 0 0 25px rgba(16, 185, 129, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .splash-logo-wrap svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    /* Title & Badge */
+    .splash-title-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .splash-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      color: #ffffff;
+      line-height: 1.1;
+    }
+
+    .splash-badge {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #34d399;
+      text-transform: uppercase;
+    }
+
+    .splash-subtitle {
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.6);
+      letter-spacing: -0.01em;
+      margin-top: 4px;
+    }
+
+    /* Prominent Creator Section */
+    .splash-creator-pill {
+      margin-top: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 999px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .splash-creator-label {
+      font-size: 0.68rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: rgba(255, 255, 255, 0.45);
+      text-transform: uppercase;
+    }
+
+    .splash-creator-dot {
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: #10b981;
+      box-shadow: 0 0 6px #10b981;
+    }
+
+    .splash-creator-name {
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      color: #34d399;
+      text-transform: uppercase;
+    }
+
+    /* Smooth Progress Bar at Bottom of Card */
+    .splash-loader-track {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+    }
+
+    .splash-loader {
+      height: 100%;
+      background: linear-gradient(90deg, #10b981, #06b6d4, #10b981);
+      background-size: 200% 100%;
+      width: 0%;
+      animation: load-bar 1.8s cubic-bezier(0.16, 1, 0.3, 1) forwards, load-gradient 1.8s linear infinite;
+    }
+
+    @keyframes load-bar {
+      0% { width: 0%; }
+      35% { width: 45%; }
+      70% { width: 85%; }
+      100% { width: 100%; }
+    }
+
+    @keyframes load-gradient {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="splash-card">
+    
+    <!-- Dark Negative-Space AB Stencil Logo (Inline Vector SVG — Always Visible) -->
+    <div class="splash-logo-wrap" title="TMO AB Dark Negative Space Logo">
+      <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#0c0d12" />
+            <stop offset="50%" stop-color="#14161f" />
+            <stop offset="100%" stop-color="#07080b" />
+          </linearGradient>
+          <linearGradient id="metalGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95" />
+            <stop offset="100%" stop-color="#8a94a6" stop-opacity="0.8" />
+          </linearGradient>
+          <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#34d399" />
+            <stop offset="100%" stop-color="#06b6d4" />
+          </linearGradient>
+          <radialGradient id="ambGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#10b981" stop-opacity="0.22" />
+            <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+
+        <!-- Base Dark Squircle with hairline border -->
+        <rect x="2.5" y="2.5" width="95" height="95" rx="22" fill="url(#bgGrad)" stroke="rgba(255,255,255,0.12)" stroke-width="1.5" />
+        <circle cx="50" cy="50" r="36" fill="url(#ambGlow)" />
+        <rect x="4" y="4" width="92" height="92" rx="20.5" fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1" />
+
+        <!-- Monogram AB with Negative Space Stencil Cuts -->
+        <g transform="translate(1, 0)">
+          <!-- LETTER A: Left leg -->
+          <path d="M 20 70 L 30 70 L 39 33 L 30 33 Z" fill="url(#metalGrad)" />
+          <!-- LETTER A: Apex and upper right leg -->
+          <path d="M 33 27 L 43 27 L 50 49 L 41 49 Z" fill="url(#metalGrad)" />
+          <!-- LETTER A: Lower right leg separated by 5px negative space slit -->
+          <path d="M 43 54 L 52 54 L 57 70 L 47 70 Z" fill="url(#metalGrad)" />
+          <!-- LETTER A: Negative-space floating crossbar -->
+          <rect x="29" y="46" width="13" height="4.5" rx="1.5" fill="url(#emeraldGrad)" />
+
+          <!-- LETTER B: Left vertical stem with central negative space notch -->
+          <path d="M 57 27 H 65 V 45 H 57 Z" fill="url(#metalGrad)" />
+          <path d="M 57 51 H 65 V 70 H 57 Z" fill="url(#metalGrad)" />
+
+          <!-- LETTER B: Upper loop with negative space cutout -->
+          <path d="M 66 27 H 75 C 81 27 84.5 30 84.5 36 C 84.5 42 81 45 75 45 H 66 V 27 Z 
+                   M 72.5 33 H 68 V 39 H 72.5 C 74.5 39 76.5 38 76.5 36 C 76.5 34 74.5 33 72.5 33 Z" 
+                fill="url(#metalGrad)" fill-rule="evenodd" />
+
+          <!-- LETTER B: Lower loop separated by 6px horizontal space slit -->
+          <path d="M 66 51 H 76 C 82.5 51 86 54.5 86 61 C 86 67.5 82 70 75 70 H 66 V 51 Z 
+                   M 73 57 H 68 V 64 H 73 C 75.5 64 78 63 78 60.5 C 78 58 75.5 57 73 57 Z" 
+                fill="url(#metalGrad)" fill-rule="evenodd" />
+
+          <!-- Acoustic Equalizer Negative Space Accent -->
+          <circle cx="54" cy="48" r="2" fill="#10b981" />
+        </g>
+      </svg>
+    </div>
+
+    <!-- Title and Version -->
+    <div class="splash-title-row">
+      <span class="splash-title">TMO</span>
+      <span class="splash-badge">v1.0</span>
+    </div>
+
+    <div class="splash-subtitle">Throttl Music Overlay</div>
+
+    <!-- Prominent Creator Credit: "My name is most clear" -->
+    <div class="splash-creator-pill">
+      <span class="splash-creator-label">Created by</span>
+      <span class="splash-creator-dot"></span>
+      <span class="splash-creator-name">Throttl</span>
+    </div>
+
+    <!-- Bottom Progress Loader -->
+    <div class="splash-loader-track">
+      <div class="splash-loader"></div>
+    </div>
+
+  </div>
+</body>
+</html>

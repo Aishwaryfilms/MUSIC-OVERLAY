@@ -1,0 +1,19 @@
+{
+  "name": "throttl-music-overlay",
+  "version": "1.0.0",
+  "description": "TMO (Throttl Music Overlay) — Clean, Modern Desktop Audio Widget & OBS Overlay",
+  "main": "desktop-app.js",
+  "author": "Throttl",
+  "scripts": {
+    "start": "electron .",
+    "hud": "electron . --hud-only",
+    "server": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "electron": "^41.1.0"
+  }
+}

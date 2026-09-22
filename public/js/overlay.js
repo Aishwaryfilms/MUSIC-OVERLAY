@@ -474,8 +474,21 @@
     });
 
     window.electronAPI.getInitialState().then((data) => {
-      if (data && data.track) {
-        handleStateUpdate(data.track, data.artDataUrl);
+      if (data) {
+        if (data.settings) {
+          handleSettingsUpdate(data.settings);
+          if (data.settings.activeTheme) {
+            handleThemeSwitch({
+              theme: data.settings.activeTheme,
+              orientation: data.settings.orientation || 'horizontal',
+              customThemes: data.settings.customThemes,
+              customCss: data.settings.customCss
+            });
+          }
+        }
+        if (data.track) {
+          handleStateUpdate(data.track, data.artDataUrl);
+        }
       }
     }).catch(() => {});
   }

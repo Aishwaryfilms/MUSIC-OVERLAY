@@ -73,6 +73,15 @@ stateManager.on('settings_update', (settings) => {
 
 // Window Creation Functions
 
+function syncObsOverlayToApp() {
+  if (obsOverlayWindow && !obsOverlayWindow.isDestroyed() && mainWindow && !mainWindow.isDestroyed()) {
+    if (!mainWindow.isMinimized()) {
+      const b = getObsWindowBounds();
+      obsOverlayWindow.setBounds(b);
+    }
+  }
+}
+
 function createMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) mainWindow.restore();
@@ -95,25 +104,47 @@ function createMainWindow() {
     }
   });
 
-  // 3. Load via loadFile
   mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
+
+  mainWindow.on('move', syncObsOverlayToApp);
+  mainWindow.on('resize', syncObsOverlayToApp);
+
+  mainWindow.on('minimize', () => {
+    // Windows automatically minimizes child windows parented to mainWindow.
+  });
+
+  mainWindow.on('restore', () => {
+    setTimeout(() => {
+      syncObsOverlayToApp();
+    }, 50);
+  });
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
+      obsOverlayWindow.close();
+    }
   });
 }
 
-function getOffscreenCoordinates(width = 600, height = 250) {
-  try {
-    const displays = screen.getAllDisplays();
-    let minX = 0;
-    for (const d of displays) {
-      if (d.bounds.x < minX) minX = d.bounds.x;
-    }
-    return { x: minX - width - 1000, y: 0 };
-  } catch (e) {
-    return { x: -3000, y: 0 };
+function getObsWindowBounds() {
+  const isVertical = stateManager.settings && stateManager.settings.orientation === 'vertical';
+  const defaultW = isVertical ? 380 : 700;
+  const defaultH = isVertical ? 540 : 320;
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    const mb = mainWindow.getBounds();
+    const stageWidth = Math.max(300, mb.width - 260);
+    const stageHeight = Math.max(200, mb.height - 180);
+    const w = Math.min(defaultW, stageWidth);
+    const h = Math.min(defaultH, stageHeight);
+
+    // Center directly inside the stage area of mainWindow
+    const stageX = mb.x + 230 + Math.max(0, Math.round((mb.width - 230 - w) / 2));
+    const stageY = mb.y + 60 + Math.max(0, Math.round((mb.height - 130 - h) / 2));
+    return { x: stageX, y: stageY, width: w, height: h };
   }
+  return { width: defaultW, height: defaultH };
 }
 
 function createDesktopOverlay() {
@@ -196,7 +227,10 @@ function createDesktopOverlay() {
 
   desktopOverlayWindow.on('closed', () => {
     desktopOverlayWindow = null;
+    sendToAllWindows('overlay-status', { mode: 'desktop', isOpen: false });
   });
+
+  sendToAllWindows('overlay-status', { mode: 'desktop', isOpen: true });
 
   // Right-click context menu
   desktopOverlayWindow.webContents.on('context-menu', () => {
@@ -246,23 +280,18 @@ function createObsOverlay() {
     return obsOverlayWindow;
   }
 
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width, height } = primaryDisplay.workAreaSize;
-  const w = 700;
-  const h = 320;
+  const initialBounds = getObsWindowBounds();
 
   obsOverlayWindow = new BrowserWindow({
-    x: Math.max(20, width - w - 40),
-    y: Math.max(20, height - h - 40),
-    width: w,
-    height: h,
+    ...initialBounds,
+    parent: (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null,
     title: 'TMO Overlay [OBS]',
     transparent: true,
     frame: false,
     backgroundColor: '#00000000',
     alwaysOnTop: false,
     focusable: false,
-    resizable: true,
+    resizable: false,
     hasShadow: false,
     skipTaskbar: true,
     webPreferences: {
@@ -273,14 +302,16 @@ function createObsOverlay() {
     }
   });
 
-  // Click-through functionality for OBS so it never steals gaming clicks
+  // Click-through functionality for OBS so it never steals clicks inside the app
   obsOverlayWindow.setIgnoreMouseEvents(true, { forward: true });
   obsOverlayWindow.loadFile(path.join(__dirname, 'public', 'overlay.html'));
 
   obsOverlayWindow.on('closed', () => {
     obsOverlayWindow = null;
+    sendToAllWindows('overlay-status', { mode: 'obs', isOpen: false });
   });
 
+  sendToAllWindows('overlay-status', { mode: 'obs', isOpen: true });
   return obsOverlayWindow;
 }
 
@@ -334,6 +365,9 @@ function registerIpcHandlers() {
   ipcMain.handle('save-settings', (event, data) => {
     stateManager.saveSettings(data);
     sendToAllWindows('settings-update', stateManager.settings);
+    if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
+      syncObsOverlayToApp();
+    }
     return { success: true, settings: stateManager.settings };
   });
 
@@ -377,25 +411,8 @@ function registerIpcHandlers() {
 
   ipcMain.handle('toggle-obs-position', () => {
     if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
-      const currentBounds = obsOverlayWindow.getBounds();
-      const primaryDisplay = screen.getPrimaryDisplay();
-      if (currentBounds.x < 0) {
-        obsOverlayWindow.setBounds({
-          x: Math.round(primaryDisplay.bounds.x + (primaryDisplay.bounds.width - 600) / 2),
-          y: Math.round(primaryDisplay.bounds.y + (primaryDisplay.bounds.height - 250) / 2),
-          width: 600,
-          height: 250
-        });
-        return { success: true, onScreen: true };
-      } else {
-        const offscreen = getOffscreenCoordinates(600, 250);
-        obsOverlayWindow.setBounds({
-          ...offscreen,
-          width: 600,
-          height: 250
-        });
-        return { success: true, onScreen: false };
-      }
+      syncObsOverlayToApp();
+      return { success: true, onScreen: true };
     }
     return { success: false, error: 'OBS overlay not running' };
   });
@@ -432,6 +449,9 @@ function registerIpcHandlers() {
         const targetW = isVert ? 380 : 700;
         const targetH = isVert ? 540 : 320;
         desktopOverlayWindow.setSize(targetW, targetH, true);
+      }
+      if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
+        syncObsOverlayToApp();
       }
     }
     if (desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {

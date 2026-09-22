@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeOverlay: (mode) => ipcRenderer.invoke('close-overlay', mode),
   isOverlayOpen: (mode) => ipcRenderer.invoke('is-overlay-open', mode),
   toggleObsPosition: () => ipcRenderer.invoke('toggle-obs-position'),
+  onOverlayStatus: (callback) => {
+    ipcRenderer.on('overlay-status', (_event, data) => callback(data));
+  },
 
   // Send theme/settings changes to overlay windows (relayed by main)
   sendToOverlay: (channel, data) => ipcRenderer.send('relay-to-overlays', { channel, data }),

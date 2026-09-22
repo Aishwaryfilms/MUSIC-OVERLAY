@@ -355,6 +355,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const textEl = btnObsOverlay.querySelector('span');
       if (textEl) textEl.textContent = obsOverlayActive ? 'OBS Overlay (On)' : 'OBS Overlay';
     }
+    if (previewFrame) {
+      previewFrame.style.opacity = obsOverlayActive ? '0' : '1';
+    }
   }
 
   if (btnDesktopOverlay) btnDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
@@ -777,5 +780,13 @@ USER STYLE / THEME REQUEST:
       obsOverlayActive = open;
       updateOverlayButtons();
     });
+
+    if (window.electronAPI.onOverlayStatus) {
+      window.electronAPI.onOverlayStatus(({ mode, isOpen }) => {
+        if (mode === 'desktop') desktopOverlayActive = isOpen;
+        if (mode === 'obs') obsOverlayActive = isOpen;
+        updateOverlayButtons();
+      });
+    }
   }
 });

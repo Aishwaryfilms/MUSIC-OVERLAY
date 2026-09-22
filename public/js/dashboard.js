@@ -325,20 +325,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // OBS Overlay Toggle
+  // OBS Overlay Toggle (In-App Transparent Mode — Zero Pop-Outs)
+  function setObsMode(active) {
+    obsOverlayActive = active;
+    const appWin = document.getElementById('macos-window');
+    if (appWin) appWin.classList.toggle('obs-mode', active);
+    document.body.classList.toggle('obs-mode', active);
+    document.documentElement.classList.toggle('obs-mode', active);
+    updateOverlayButtons();
+  }
+
   function toggleObsOverlay() {
     if (window.electronAPI) {
       if (obsOverlayActive) {
-        window.electronAPI.closeOverlay('obs').then(() => {
-          obsOverlayActive = false;
-          updateOverlayButtons();
-          showToast('OBS overlay closed');
+        window.electronAPI.exitObsMode().then(() => {
+          setObsMode(false);
+          showToast('Returned to TMO Studio controls');
         });
       } else {
-        window.electronAPI.launchObsOverlay().then(() => {
-          obsOverlayActive = true;
-          updateOverlayButtons();
-          showToast('OBS Overlay active — ready in OBS Window Capture: "TMO Overlay [OBS]"');
+        window.electronAPI.enterObsMode().then(() => {
+          setObsMode(true);
+          showToast('✨ OBS Mode: Select "TMO Overlay [OBS]" in OBS Window Capture! Press Esc to exit.');
         });
       }
     }
@@ -353,12 +360,36 @@ document.addEventListener('DOMContentLoaded', () => {
     if (btnObsOverlay) {
       btnObsOverlay.classList.toggle('active', obsOverlayActive);
       const textEl = btnObsOverlay.querySelector('span');
-      if (textEl) textEl.textContent = obsOverlayActive ? 'OBS Overlay (On)' : 'OBS Overlay';
-    }
-    if (previewFrame) {
-      previewFrame.style.opacity = obsOverlayActive ? '0' : '1';
+      if (textEl) textEl.textContent = obsOverlayActive ? 'OBS Mode (Active)' : 'OBS Mode';
     }
   }
+
+  const btnExitObs = document.getElementById('btn-exit-obs');
+  if (btnExitObs) {
+    btnExitObs.addEventListener('click', () => {
+      if (window.electronAPI && window.electronAPI.exitObsMode) {
+        window.electronAPI.exitObsMode().then(() => {
+          setObsMode(false);
+          showToast('Returned to TMO Studio controls');
+        });
+      } else {
+        setObsMode(false);
+      }
+    });
+  }
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && obsOverlayActive) {
+      if (window.electronAPI && window.electronAPI.exitObsMode) {
+        window.electronAPI.exitObsMode().then(() => {
+          setObsMode(false);
+          showToast('Returned to TMO Studio controls');
+        });
+      } else {
+        setObsMode(false);
+      }
+    }
+  });
 
   if (btnDesktopOverlay) btnDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
   if (btnNavDesktopOverlay) btnNavDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
@@ -784,8 +815,13 @@ USER STYLE / THEME REQUEST:
     if (window.electronAPI.onOverlayStatus) {
       window.electronAPI.onOverlayStatus(({ mode, isOpen }) => {
         if (mode === 'desktop') desktopOverlayActive = isOpen;
-        if (mode === 'obs') obsOverlayActive = isOpen;
-        updateOverlayButtons();
+        if (mode === 'obs') setObsMode(isOpen);
+      });
+    }
+
+    if (window.electronAPI.onObsModeChange) {
+      window.electronAPI.onObsModeChange(({ active }) => {
+        setObsMode(active);
       });
     }
   }

@@ -50,7 +50,7 @@ function getArtDataUrl() {
 
 // Helper: Broadcast to all active windows
 function sendToAllWindows(channel, data) {
-  const windows = [mainWindow, desktopOverlayWindow, obsOverlayWindow];
+  const windows = [mainWindow, desktopOverlayWindow];
   for (const win of windows) {
     if (win && !win.isDestroyed()) {
       win.webContents.send(channel, data);
@@ -71,19 +71,42 @@ stateManager.on('settings_update', (settings) => {
   }
 });
 
-// Window Creation Functions
+// Window Creation & In-App OBS Overlay Functions
+let isObsMode = false;
+let savedStudioBounds = { width: 1024, height: 768 };
 
-function syncObsOverlayToApp() {
-  if (obsOverlayWindow && !obsOverlayWindow.isDestroyed() && mainWindow && !mainWindow.isDestroyed()) {
-    if (!mainWindow.isMinimized()) {
-      const b = getObsWindowBounds();
-      obsOverlayWindow.setBounds(b);
-    }
+function enterObsMode() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  isObsMode = true;
+  const currentBounds = mainWindow.getBounds();
+  if (currentBounds.width > 700) {
+    savedStudioBounds = currentBounds;
   }
+  const isVertical = stateManager.settings && stateManager.settings.orientation === 'vertical';
+  const targetW = isVertical ? 380 : 700;
+  const targetH = isVertical ? 540 : 320;
+  mainWindow.setMinimumSize(300, 200);
+  mainWindow.setSize(targetW, targetH, true);
+  mainWindow.setTitle('TMO Overlay [OBS]');
+  mainWindow.webContents.send('obs-mode-change', { active: true });
+  sendToAllWindows('overlay-status', { mode: 'obs', isOpen: true });
+}
+
+function exitObsMode() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  isObsMode = false;
+  mainWindow.setMinimumSize(800, 600);
+  const restoreW = Math.max(800, savedStudioBounds.width || 1024);
+  const restoreH = Math.max(600, savedStudioBounds.height || 768);
+  mainWindow.setSize(restoreW, restoreH, true);
+  mainWindow.setTitle('TMO Studio');
+  mainWindow.webContents.send('obs-mode-change', { active: false });
+  sendToAllWindows('overlay-status', { mode: 'obs', isOpen: false });
 }
 
 function createMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
+    if (isObsMode) exitObsMode();
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
     return;
@@ -92,59 +115,26 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1024,
     height: 768,
-    minWidth: 800,
-    minHeight: 600,
+    minWidth: 300,
+    minHeight: 200,
     title: 'TMO Studio',
     frame: false,
     transparent: true,
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload-dashboard.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      backgroundThrottling: false
     }
   });
 
   mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
 
-  mainWindow.on('move', syncObsOverlayToApp);
-  mainWindow.on('resize', syncObsOverlayToApp);
-
-  mainWindow.on('minimize', () => {
-    // Windows automatically minimizes child windows parented to mainWindow.
-  });
-
-  mainWindow.on('restore', () => {
-    setTimeout(() => {
-      syncObsOverlayToApp();
-    }, 50);
-  });
-
   mainWindow.on('closed', () => {
     mainWindow = null;
-    if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
-      obsOverlayWindow.close();
-    }
+    isObsMode = false;
   });
-}
-
-function getObsWindowBounds() {
-  const isVertical = stateManager.settings && stateManager.settings.orientation === 'vertical';
-  const defaultW = isVertical ? 380 : 700;
-  const defaultH = isVertical ? 540 : 320;
-
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    const mb = mainWindow.getBounds();
-    const stageWidth = Math.max(300, mb.width - 260);
-    const stageHeight = Math.max(200, mb.height - 180);
-    const w = Math.min(defaultW, stageWidth);
-    const h = Math.min(defaultH, stageHeight);
-
-    // Center directly inside the stage area of mainWindow
-    const stageX = mb.x + 230 + Math.max(0, Math.round((mb.width - 230 - w) / 2));
-    const stageY = mb.y + 60 + Math.max(0, Math.round((mb.height - 130 - h) / 2));
-    return { x: stageX, y: stageY, width: w, height: h };
-  }
-  return { width: defaultW, height: defaultH };
 }
 
 function createDesktopOverlay() {
@@ -274,47 +264,6 @@ function createDesktopOverlay() {
   return desktopOverlayWindow;
 }
 
-function createObsOverlay() {
-  if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
-    obsOverlayWindow.focus();
-    return obsOverlayWindow;
-  }
-
-  const initialBounds = getObsWindowBounds();
-
-  obsOverlayWindow = new BrowserWindow({
-    ...initialBounds,
-    parent: (mainWindow && !mainWindow.isDestroyed()) ? mainWindow : null,
-    title: 'TMO Overlay [OBS]',
-    transparent: true,
-    frame: false,
-    backgroundColor: '#00000000',
-    alwaysOnTop: false,
-    focusable: false,
-    resizable: false,
-    hasShadow: false,
-    skipTaskbar: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload-overlay.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      backgroundThrottling: false
-    }
-  });
-
-  // Click-through functionality for OBS so it never steals clicks inside the app
-  obsOverlayWindow.setIgnoreMouseEvents(true, { forward: true });
-  obsOverlayWindow.loadFile(path.join(__dirname, 'public', 'overlay.html'));
-
-  obsOverlayWindow.on('closed', () => {
-    obsOverlayWindow = null;
-    sendToAllWindows('overlay-status', { mode: 'obs', isOpen: false });
-  });
-
-  sendToAllWindows('overlay-status', { mode: 'obs', isOpen: true });
-  return obsOverlayWindow;
-}
-
 function showSplashScreen(callback) {
   splashWindow = new BrowserWindow({
     width: 400,
@@ -365,8 +314,9 @@ function registerIpcHandlers() {
   ipcMain.handle('save-settings', (event, data) => {
     stateManager.saveSettings(data);
     sendToAllWindows('settings-update', stateManager.settings);
-    if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
-      syncObsOverlayToApp();
+    if (isObsMode && mainWindow && !mainWindow.isDestroyed()) {
+      const isVertical = stateManager.settings && stateManager.settings.orientation === 'vertical';
+      mainWindow.setSize(isVertical ? 380 : 700, isVertical ? 540 : 320, true);
     }
     return { success: true, settings: stateManager.settings };
   });
@@ -390,31 +340,37 @@ function registerIpcHandlers() {
   });
 
   ipcMain.handle('launch-obs-overlay', () => {
-    createObsOverlay();
+    enterObsMode();
+    return { success: true };
+  });
+
+  ipcMain.handle('enter-obs-mode', () => {
+    enterObsMode();
+    return { success: true };
+  });
+
+  ipcMain.handle('exit-obs-mode', () => {
+    exitObsMode();
     return { success: true };
   });
 
   ipcMain.handle('close-overlay', (event, mode) => {
     if (mode === 'desktop' && desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
       desktopOverlayWindow.close();
-    } else if (mode === 'obs' && obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
-      obsOverlayWindow.close();
+    } else if (mode === 'obs') {
+      exitObsMode();
     }
     return { success: true };
   });
 
   ipcMain.handle('is-overlay-open', (event, mode) => {
     if (mode === 'desktop') return !!(desktopOverlayWindow && !desktopOverlayWindow.isDestroyed());
-    if (mode === 'obs') return !!(obsOverlayWindow && !obsOverlayWindow.isDestroyed());
+    if (mode === 'obs') return isObsMode;
     return false;
   });
 
   ipcMain.handle('toggle-obs-position', () => {
-    if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
-      syncObsOverlayToApp();
-      return { success: true, onScreen: true };
-    }
-    return { success: false, error: 'OBS overlay not running' };
+    return { success: true };
   });
 
   ipcMain.handle('simulator-track', (event, index) => {
@@ -444,21 +400,21 @@ function registerIpcHandlers() {
 
   ipcMain.on('relay-to-overlays', (event, { channel, data }) => {
     if (channel === 'switch-theme' && data && data.orientation) {
+      const isVert = data.orientation === 'vertical';
+      const targetW = isVert ? 380 : 700;
+      const targetH = isVert ? 540 : 320;
       if (desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
-        const isVert = data.orientation === 'vertical';
-        const targetW = isVert ? 380 : 700;
-        const targetH = isVert ? 540 : 320;
         desktopOverlayWindow.setSize(targetW, targetH, true);
       }
-      if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
-        syncObsOverlayToApp();
+      if (isObsMode && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.setSize(targetW, targetH, true);
       }
     }
     if (desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
       desktopOverlayWindow.webContents.send(channel, data);
     }
-    if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
-      obsOverlayWindow.webContents.send(channel, data);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(channel, data);
     }
   });
 
@@ -494,9 +450,9 @@ app.whenReady().then(() => {
     const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
     tray = new Tray(trayIcon);
     const contextMenu = Menu.buildFromTemplate([
-      { label: 'TMO Studio', click: () => createMainWindow() },
+      { label: 'TMO Studio', click: () => { if (isObsMode) exitObsMode(); createMainWindow(); } },
       { label: 'Desktop Overlay', click: () => createDesktopOverlay() },
-      { label: 'OBS Overlay', click: () => createObsOverlay() },
+      { label: 'Toggle OBS Mode', click: () => { if (!isObsMode) enterObsMode(); else exitObsMode(); } },
       { type: 'separator' },
       { label: 'Exit TMO', click: () => app.quit() }
     ]);

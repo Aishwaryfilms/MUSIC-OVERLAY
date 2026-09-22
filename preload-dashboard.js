@@ -18,11 +18,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Overlay control
   launchDesktopOverlay: () => ipcRenderer.invoke('launch-desktop-overlay'),
   launchObsOverlay: () => ipcRenderer.invoke('launch-obs-overlay'),
+  enterObsMode: () => ipcRenderer.invoke('enter-obs-mode'),
+  exitObsMode: () => ipcRenderer.invoke('exit-obs-mode'),
   closeOverlay: (mode) => ipcRenderer.invoke('close-overlay', mode),
   isOverlayOpen: (mode) => ipcRenderer.invoke('is-overlay-open', mode),
   toggleObsPosition: () => ipcRenderer.invoke('toggle-obs-position'),
   onOverlayStatus: (callback) => {
     ipcRenderer.on('overlay-status', (_event, data) => callback(data));
+  },
+  onObsModeChange: (callback) => {
+    ipcRenderer.on('obs-mode-change', (_event, data) => callback(data));
   },
 
   // Send theme/settings changes to overlay windows (relayed by main)

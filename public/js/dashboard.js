@@ -20,10 +20,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const sourceItems = document.querySelectorAll('.source-pill[data-source]');
 
   // Action Buttons
+  const appWindow = document.getElementById('app-window') || document.querySelector('.macos-window');
   const btnDesktopOverlay = document.getElementById('btn-desktop-overlay');
-  const btnObsOverlay = document.getElementById('btn-obs-overlay');
+  const btnObsStage = document.getElementById('btn-obs-stage');
   const btnNavDesktopOverlay = document.getElementById('btn-nav-desktop-overlay');
-  const btnNavObsOverlay = document.getElementById('btn-nav-obs-overlay');
+  const btnNavObsStage = document.getElementById('btn-nav-obs-stage');
+  const btnExitObs = document.getElementById('btn-exit-obs');
 
   // Drawer Elements
   const settingsDrawer = document.getElementById('settings-drawer');
@@ -53,7 +55,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnWinMin = document.getElementById('btn-win-min');
   const btnWinMax = document.getElementById('btn-win-max');
 
-  // State
   let customThemes = [];
   let currentTheme = 'vinyl';
   let currentOrientation = 'horizontal';
@@ -62,6 +63,53 @@ document.addEventListener('DOMContentLoaded', () => {
   let autoHideWhenPaused = false;
   let desktopOverlayActive = false;
   let obsOverlayActive = false;
+  let lastTrackData = null;
+  let lastArtDataUrl = null;
+
+  function sendToPreview(type, payload = {}) {
+    if (!previewFrame || !previewFrame.contentWindow) return;
+    try {
+      previewFrame.contentWindow.postMessage({ type, ...payload }, '*');
+      if (previewFrame.contentWindow.tmoPreviewAPI) {
+        if (type === 'switch_theme') {
+          previewFrame.contentWindow.tmoPreviewAPI.switchTheme(
+            payload.theme,
+            payload.orientation,
+            payload.customCss,
+            payload.customThemes,
+            payload.customThemeId
+          );
+        } else if (type === 'track_update') {
+          previewFrame.contentWindow.tmoPreviewAPI.updateTrack(payload.track, payload.artDataUrl);
+        } else if (type === 'settings_update') {
+          previewFrame.contentWindow.tmoPreviewAPI.updateSettings(payload.settings);
+        } else if (type === 'init') {
+          if (payload.settings) previewFrame.contentWindow.tmoPreviewAPI.updateSettings(payload.settings);
+          if (payload.theme) previewFrame.contentWindow.tmoPreviewAPI.switchTheme(payload.theme, payload.orientation);
+          if (payload.track) previewFrame.contentWindow.tmoPreviewAPI.updateTrack(payload.track, payload.artDataUrl);
+        }
+      }
+    } catch (e) {}
+  }
+
+  // When preview iframe finishes loading, sync active theme and track
+  if (previewFrame) {
+    previewFrame.addEventListener('load', () => {
+      sendToPreview('init', {
+        theme: currentTheme,
+        orientation: currentOrientation,
+        track: lastTrackData,
+        artDataUrl: lastArtDataUrl,
+        settings: {
+          autoHideWhenPaused: toggleAutoHide ? toggleAutoHide.checked : false,
+          showProgressBar: toggleProgress ? toggleProgress.checked : true,
+          showVisualizer: toggleWave ? toggleWave.checked : true,
+          backgroundMode: currentBgMode,
+          accentColor: currentAccent
+        }
+      });
+    });
+  }
 
   function showToast(msg) {
     toast.textContent = msg;
@@ -178,16 +226,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Update preview iframe
-        if (previewFrame && previewFrame.contentWindow) {
-          previewFrame.contentWindow.postMessage({
-            type: 'switch_theme',
-            theme: 'custom',
-            customThemeId: theme.id,
-            orientation: currentOrientation,
-            customCss: theme.css,
-            customThemes: customThemes
-          }, '*');
-        }
+        sendToPreview('switch_theme', {
+          theme: 'custom',
+          customThemeId: theme.id,
+          orientation: currentOrientation,
+          customCss: theme.css,
+          customThemes: customThemes
+        });
 
         // Save active theme to settings
         if (window.electronAPI) {
@@ -224,14 +269,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Update preview iframe
-        if (previewFrame && previewFrame.contentWindow) {
-          previewFrame.contentWindow.postMessage({
-            type: 'switch_theme',
-            theme: currentTheme,
-            orientation: currentOrientation,
-            customCss: ''
-          }, '*');
-        }
+        sendToPreview('switch_theme', {
+          theme: currentTheme,
+          orientation: currentOrientation,
+          customCss: ''
+        });
 
         // Save to settings
         if (window.electronAPI) {
@@ -285,61 +327,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // OBS Overlay Toggle
-  function toggleObsOverlay() {
-    if (window.electronAPI) {
-      if (obsOverlayActive) {
-        window.electronAPI.closeOverlay('obs').then(() => {
-          obsOverlayActive = false;
-          updateOverlayButtons();
-          showToast('OBS overlay closed');
-        });
-      } else {
-        window.electronAPI.launchObsOverlay().then(() => {
-          obsOverlayActive = true;
-          updateOverlayButtons();
-          showToast('OBS Overlay active (hidden from desktop, ready for OBS Window Capture)');
-        });
-      }
-    }
-  }
-
   function updateOverlayButtons() {
     if (btnDesktopOverlay) {
       btnDesktopOverlay.classList.toggle('active', desktopOverlayActive);
       const textEl = btnDesktopOverlay.querySelector('span');
       if (textEl) textEl.textContent = desktopOverlayActive ? 'Desktop Overlay (On)' : 'Desktop Overlay';
     }
-    if (btnObsOverlay) {
-      btnObsOverlay.classList.toggle('active', obsOverlayActive);
-      const textEl = btnObsOverlay.querySelector('span');
-      if (textEl) textEl.textContent = obsOverlayActive ? 'OBS Overlay (On)' : 'OBS Overlay';
+  }
+
+  // In-App OBS Mode Toggle: Transforms Studio into pure clean canvas for OBS Window Capture (zero pop-outs!)
+  function toggleInAppObsMode() {
+    if (!appWindow) return;
+    const isObsMode = appWindow.classList.toggle('obs-capture-mode');
+    if (btnObsStage) btnObsStage.classList.toggle('active', isObsMode);
+    if (btnNavObsStage) btnNavObsStage.classList.toggle('active', isObsMode);
+    if (isObsMode) {
+      showToast('✨ OBS Mode: Select "TMO Studio" in OBS Window Capture! Press Esc to exit.');
+    } else {
+      showToast('Returned to TMO Studio controls');
     }
   }
 
-  function toggleObsOnScreen(ev) {
-    ev.preventDefault();
-    if (window.electronAPI && obsOverlayActive) {
-      window.electronAPI.toggleObsPosition().then((res) => {
-        if (res.onScreen) {
-          showToast('OBS Overlay brought on-screen for preview');
-        } else {
-          showToast('OBS Overlay sent off-screen (clean desktop)');
-        }
-      });
-    }
+  function exitInAppObsMode() {
+    if (!appWindow) return;
+    appWindow.classList.remove('obs-capture-mode');
+    if (btnObsStage) btnObsStage.classList.remove('active');
+    if (btnNavObsStage) btnNavObsStage.classList.remove('active');
+    showToast('Returned to TMO Studio controls');
   }
 
   if (btnDesktopOverlay) btnDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
   if (btnNavDesktopOverlay) btnNavDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
-  if (btnObsOverlay) {
-    btnObsOverlay.addEventListener('click', toggleObsOverlay);
-    btnObsOverlay.addEventListener('contextmenu', toggleObsOnScreen);
-  }
-  if (btnNavObsOverlay) {
-    btnNavObsOverlay.addEventListener('click', toggleObsOverlay);
-    btnNavObsOverlay.addEventListener('contextmenu', toggleObsOnScreen);
-  }
+  if (btnObsStage) btnObsStage.addEventListener('click', toggleInAppObsMode);
+  if (btnNavObsStage) btnNavObsStage.addEventListener('click', toggleInAppObsMode);
+  if (btnExitObs) btnExitObs.addEventListener('click', exitInAppObsMode);
+
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && appWindow && appWindow.classList.contains('obs-capture-mode')) {
+      exitInAppObsMode();
+    }
+  });
 
   // Drawer Handlers
   function openDrawer(type) {
@@ -369,6 +396,17 @@ document.addEventListener('DOMContentLoaded', () => {
       bgChips.forEach((c) => c.classList.remove('active'));
       chip.classList.add('active');
       currentBgMode = chip.getAttribute('data-bg');
+
+      // Update studio preview backdrop
+      if (stageBox) {
+        stageBox.className = 'stage-preview-box ' + (
+          currentBgMode === 'transparent' ? 'checker' :
+          currentBgMode === 'chroma-green' ? 'green' : 'magenta'
+        );
+      }
+      sendToPreview('settings_update', {
+        settings: { backgroundMode: currentBgMode }
+      });
     });
   });
 
@@ -378,8 +416,34 @@ document.addEventListener('DOMContentLoaded', () => {
       swatchCircles.forEach((s) => s.classList.remove('active'));
       sw.classList.add('active');
       currentAccent = sw.getAttribute('data-color');
+      sendToPreview('settings_update', {
+        settings: { accentColor: currentAccent }
+      });
     });
   });
+
+  // Real-time toggle listeners for preview
+  if (toggleProgress) {
+    toggleProgress.addEventListener('change', () => {
+      sendToPreview('settings_update', {
+        settings: { showProgressBar: toggleProgress.checked }
+      });
+    });
+  }
+  if (toggleWave) {
+    toggleWave.addEventListener('change', () => {
+      sendToPreview('settings_update', {
+        settings: { showVisualizer: toggleWave.checked }
+      });
+    });
+  }
+  if (toggleAutoHide) {
+    toggleAutoHide.addEventListener('change', () => {
+      sendToPreview('settings_update', {
+        settings: { autoHideWhenPaused: toggleAutoHide.checked }
+      });
+    });
+  }
 
   // Save Settings from Drawer
   btnSaveDrawer.addEventListener('click', () => {
@@ -536,16 +600,13 @@ USER STYLE / THEME REQUEST:
       }
 
       // Update preview iframe
-      if (previewFrame && previewFrame.contentWindow) {
-        previewFrame.contentWindow.postMessage({
-          type: 'switch_theme',
-          theme: 'custom',
-          customThemeId: newThemeId,
-          orientation: currentOrientation,
-          customCss: cssCode,
-          customThemes: customThemes
-        }, '*');
-      }
+      sendToPreview('switch_theme', {
+        theme: 'custom',
+        customThemeId: newThemeId,
+        orientation: currentOrientation,
+        customCss: cssCode,
+        customThemes: customThemes
+      });
 
       // Save to settings
       if (window.electronAPI) {
@@ -632,10 +693,13 @@ USER STYLE / THEME REQUEST:
     }
   }
 
-  // Live track updates from main process (replaces 1.2s polling)
+  // Live track updates from main process
   if (window.electronAPI) {
     window.electronAPI.onTrackUpdate((data) => {
+      lastTrackData = data.track;
+      lastArtDataUrl = data.artDataUrl;
       updateBanner(data.track, data.artDataUrl);
+      sendToPreview('track_update', { track: data.track, artDataUrl: data.artDataUrl });
     });
   }
 
@@ -669,6 +733,12 @@ USER STYLE / THEME REQUEST:
         bgChips.forEach((c) => {
           c.classList.toggle('active', c.getAttribute('data-bg') === currentBgMode);
         });
+        if (stageBox) {
+          stageBox.className = 'stage-preview-box ' + (
+            currentBgMode === 'transparent' ? 'checker' :
+            currentBgMode === 'chroma-green' ? 'green' : 'magenta'
+          );
+        }
       }
       if (s.autoHideWhenPaused !== undefined) {
         toggleAutoHide.checked = Boolean(s.autoHideWhenPaused);
@@ -679,22 +749,34 @@ USER STYLE / THEME REQUEST:
       if (s.showVisualizer !== undefined) {
         toggleWave.checked = Boolean(s.showVisualizer);
       }
+      if (s.accentColor) {
+        currentAccent = s.accentColor;
+        swatchCircles.forEach((sw) => {
+          sw.classList.toggle('active', sw.getAttribute('data-color') === currentAccent);
+        });
+      }
+
+      // Initialize preview stage with saved settings
+      sendToPreview('init', {
+        theme: currentTheme,
+        orientation: currentOrientation,
+        settings: s
+      });
     });
 
     // Get initial track state
     window.electronAPI.getState().then((data) => {
       if (data && data.track) {
+        lastTrackData = data.track;
+        lastArtDataUrl = data.artDataUrl;
         updateBanner(data.track, data.artDataUrl);
+        sendToPreview('track_update', { track: data.track, artDataUrl: data.artDataUrl });
       }
     });
 
     // Check overlay states
     window.electronAPI.isOverlayOpen('desktop').then((open) => {
       desktopOverlayActive = open;
-      updateOverlayButtons();
-    });
-    window.electronAPI.isOverlayOpen('obs').then((open) => {
-      obsOverlayActive = open;
       updateOverlayButtons();
     });
   }

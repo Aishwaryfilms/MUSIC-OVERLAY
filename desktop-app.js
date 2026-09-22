@@ -15,6 +15,14 @@ const localTracker = new LocalTracker();
 const spotifyTracker = new SpotifyTracker();
 const stateManager = new StateManager(localTracker, spotifyTracker);
 
+// Initialize OAuth callback server
+const createOAuthServer = require('./server');
+try {
+  createOAuthServer(spotifyTracker);
+} catch (err) {
+  console.log('[OAuth Server]', err.message);
+}
+
 // Start tracking immediately
 localTracker.start();
 spotifyTracker.startPolling();
@@ -116,24 +124,25 @@ function createDesktopOverlay() {
     return desktopOverlayWindow;
   }
 
-  const boundsFile = path.join(app.getPath('userData'), '.widget-bounds.json');
-  const defaultWidth = 540;
-  const defaultHeight = 220;
+  const isVertical = stateManager.settings && stateManager.settings.orientation === 'vertical';
+  const defaultWidth = isVertical ? 380 : 700;
+  const defaultHeight = isVertical ? 540 : 320;
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height } = primaryDisplay.workAreaSize;
   let bounds = {
     width: defaultWidth,
     height: defaultHeight,
-    x: width - defaultWidth - 20,
-    y: height - defaultHeight - 20
+    x: Math.max(20, width - defaultWidth - 30),
+    y: Math.max(20, height - defaultHeight - 30)
   };
 
   try {
     if (fs.existsSync(boundsFile)) {
       const savedBounds = JSON.parse(fs.readFileSync(boundsFile, 'utf8'));
       if (savedBounds.width && savedBounds.height) {
-        bounds.width = savedBounds.width;
-        bounds.height = savedBounds.height;
+        // Enforce safe minimum bounds so old cached tiny window sizes never crop
+        bounds.width = Math.max(savedBounds.width, isVertical ? 360 : 680);
+        bounds.height = Math.max(savedBounds.height, isVertical ? 500 : 300);
       }
       if (savedBounds.x !== undefined && savedBounds.y !== undefined) {
         const onAnyScreen = screen.getAllDisplays().some(d => {
@@ -152,6 +161,8 @@ function createDesktopOverlay() {
 
   desktopOverlayWindow = new BrowserWindow({
     ...bounds,
+    minWidth: isVertical ? 300 : 540,
+    minHeight: isVertical ? 420 : 240,
     title: 'TMO Overlay',
     transparent: true,
     frame: false,
@@ -212,8 +223,8 @@ function createDesktopOverlay() {
           desktopOverlayWindow.setBounds({
             width: defaultWidth,
             height: defaultHeight,
-            x: disp.workAreaSize.width - defaultWidth - 20,
-            y: disp.workAreaSize.height - defaultHeight - 20
+            x: disp.workAreaSize.width - defaultWidth - 30,
+            y: disp.workAreaSize.height - defaultHeight - 30
           });
         }
       },
@@ -231,27 +242,29 @@ function createDesktopOverlay() {
 
 function createObsOverlay() {
   if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
+    obsOverlayWindow.focus();
     return obsOverlayWindow;
   }
 
-  // By default, place OBS Overlay off-screen so it is NOT visible on the user's desktop,
-  // but remains fully rendered by DWM so OBS Window Capture can capture it!
-  const offscreen = getOffscreenCoordinates(600, 250);
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+  const w = 700;
+  const h = 320;
 
   obsOverlayWindow = new BrowserWindow({
-    x: offscreen.x,
-    y: offscreen.y,
-    width: 600,
-    height: 250,
+    x: Math.max(20, width - w - 40),
+    y: Math.max(20, height - h - 40),
+    width: w,
+    height: h,
     title: 'TMO Overlay [OBS]',
     transparent: true,
     frame: false,
     backgroundColor: '#00000000',
     alwaysOnTop: false,
+    focusable: false,
     resizable: true,
     hasShadow: false,
     skipTaskbar: true,
-    show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload-overlay.js'),
       contextIsolation: true,
@@ -260,9 +273,8 @@ function createObsOverlay() {
     }
   });
 
-  // Click-through functionality for OBS
+  // Click-through functionality for OBS so it never steals gaming clicks
   obsOverlayWindow.setIgnoreMouseEvents(true, { forward: true });
-
   obsOverlayWindow.loadFile(path.join(__dirname, 'public', 'overlay.html'));
 
   obsOverlayWindow.on('closed', () => {
@@ -414,6 +426,14 @@ function registerIpcHandlers() {
   });
 
   ipcMain.on('relay-to-overlays', (event, { channel, data }) => {
+    if (channel === 'switch-theme' && data && data.orientation) {
+      if (desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
+        const isVert = data.orientation === 'vertical';
+        const targetW = isVert ? 380 : 700;
+        const targetH = isVert ? 540 : 320;
+        desktopOverlayWindow.setSize(targetW, targetH, true);
+      }
+    }
     if (desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
       desktopOverlayWindow.webContents.send(channel, data);
     }

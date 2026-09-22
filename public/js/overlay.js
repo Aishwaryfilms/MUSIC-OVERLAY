@@ -375,6 +375,34 @@
     }
   }
 
+  function handleThemeSwitch(data) {
+    if (!data || !data.theme) return;
+    const trackTarget = currentTrack || (isPreview ? SAMPLE_PREVIEW_TRACK : null);
+    if (trackTarget) {
+      trackTarget.settings = trackTarget.settings || {};
+      if (data.customCss !== undefined) {
+        trackTarget.settings.customCss = data.customCss;
+      }
+      if (data.customThemes !== undefined) {
+        trackTarget.settings.customThemes = data.customThemes;
+      }
+      if (data.customThemeId !== undefined) {
+        trackTarget.settings.activeCustomThemeId = data.customThemeId;
+      }
+    }
+    renderShell(data.theme, data.orientation || 'horizontal');
+    if (trackTarget) applyTrackToDOM(trackTarget);
+  }
+
+  function handleSettingsUpdate(settings) {
+    if (!settings) return;
+    const trackTarget = currentTrack || (isPreview ? SAMPLE_PREVIEW_TRACK : null);
+    if (trackTarget) {
+      trackTarget.settings = { ...(trackTarget.settings || {}), ...settings };
+      applyTrackToDOM(trackTarget);
+    }
+  }
+
   function handleStateUpdate(track, artDataUrl) {
     if (!track) return;
     if (artDataUrl !== undefined) {
@@ -383,8 +411,8 @@
     currentTrack = track;
 
     const settings = track.settings || {};
-    const activeTheme = settings.activeTheme || 'vinyl';
-    const activeOrientation = settings.orientation || 'horizontal';
+    const activeTheme = settings.activeTheme || currentTheme || 'vinyl';
+    const activeOrientation = settings.orientation || currentOrientation || 'horizontal';
 
     const bgMode = settings.backgroundMode || 'transparent';
     document.body.classList.remove('bg-chroma-green', 'bg-chroma-magenta');
@@ -398,41 +426,53 @@
     }
   }
 
-  // === IPC-BASED COMMUNICATION (replaces WebSocket + fetch) ===
+  // === COMMUNICATION BUS (IPC for Electron Windows + postMessage for Studio Preview iframe) ===
 
-  // Listen for live track updates from main process
+  // 1. Listen for postMessage from dashboard studio preview
+  window.addEventListener('message', (event) => {
+    const data = event.data;
+    if (!data || typeof data !== 'object') return;
+
+    if (data.type === 'switch_theme') {
+      handleThemeSwitch(data);
+    } else if (data.type === 'track_update') {
+      handleStateUpdate(data.track, data.artDataUrl);
+    } else if (data.type === 'settings_update') {
+      handleSettingsUpdate(data.settings);
+    } else if (data.type === 'init') {
+      if (data.settings) handleSettingsUpdate(data.settings);
+      if (data.theme) handleThemeSwitch({ theme: data.theme, orientation: data.orientation });
+      if (data.track) handleStateUpdate(data.track, data.artDataUrl);
+    }
+  });
+
+  // 2. Expose direct preview API for same-origin iframe calling
+  window.tmoPreviewAPI = {
+    switchTheme: (theme, orientation, customCss, customThemes, customThemeId) => {
+      handleThemeSwitch({ theme, orientation, customCss, customThemes, customThemeId });
+    },
+    updateTrack: (track, artDataUrl) => {
+      handleStateUpdate(track, artDataUrl);
+    },
+    updateSettings: (settings) => {
+      handleSettingsUpdate(settings);
+    }
+  };
+
+  // 3. Listen for live updates when running as native Electron Window (Desktop HUD / OBS)
   if (window.electronAPI) {
     window.electronAPI.onTrackUpdate((data) => {
       handleStateUpdate(data.track, data.artDataUrl);
     });
 
-    // Listen for theme switch commands relayed from dashboard
     window.electronAPI.onSwitchTheme((data) => {
-      if (currentTrack) {
-        currentTrack.settings = currentTrack.settings || {};
-        if (data.customCss !== undefined) {
-          currentTrack.settings.customCss = data.customCss;
-        }
-        if (data.customThemes !== undefined) {
-          currentTrack.settings.customThemes = data.customThemes;
-        }
-        if (data.customThemeId !== undefined) {
-          currentTrack.settings.activeCustomThemeId = data.customThemeId;
-        }
-      }
-      renderShell(data.theme, data.orientation || 'horizontal');
-      if (currentTrack) applyTrackToDOM(currentTrack);
+      handleThemeSwitch(data);
     });
 
-    // Listen for settings updates relayed from dashboard
     window.electronAPI.onUpdateSettings((data) => {
-      if (currentTrack) {
-        currentTrack.settings = { ...currentTrack.settings, ...data.settings };
-        applyTrackToDOM(currentTrack);
-      }
+      handleSettingsUpdate(data.settings);
     });
 
-    // Get initial state on load
     window.electronAPI.getInitialState().then((data) => {
       if (data && data.track) {
         handleStateUpdate(data.track, data.artDataUrl);
@@ -442,4 +482,7 @@
 
   // Initial render
   renderShell('vinyl', 'horizontal');
+  if (isPreview) {
+    applyTrackToDOM(SAMPLE_PREVIEW_TRACK);
+  }
 })();

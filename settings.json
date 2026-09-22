@@ -9,7 +9,7 @@
   "showProgressBar": true,
   "showVisualizer": true,
   "autoHideWhenPaused": false,
-  "audioSource": "auto",
+  "audioSource": "youtubemusic",
   "orientation": "vertical",
   "showTimecode": true,
   "floatOnDesktop": false,

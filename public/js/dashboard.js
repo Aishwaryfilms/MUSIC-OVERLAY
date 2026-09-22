@@ -20,12 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const sourceItems = document.querySelectorAll('.source-pill[data-source]');
 
   // Action Buttons
-  const appWindow = document.getElementById('app-window') || document.querySelector('.macos-window');
   const btnDesktopOverlay = document.getElementById('btn-desktop-overlay');
-  const btnObsStage = document.getElementById('btn-obs-stage');
+  const btnObsOverlay = document.getElementById('btn-obs-overlay');
   const btnNavDesktopOverlay = document.getElementById('btn-nav-desktop-overlay');
-  const btnNavObsStage = document.getElementById('btn-nav-obs-stage');
-  const btnExitObs = document.getElementById('btn-exit-obs');
+  const btnNavObsOverlay = document.getElementById('btn-nav-obs-overlay');
 
   // Drawer Elements
   const settingsDrawer = document.getElementById('settings-drawer');
@@ -327,46 +325,42 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // OBS Overlay Toggle
+  function toggleObsOverlay() {
+    if (window.electronAPI) {
+      if (obsOverlayActive) {
+        window.electronAPI.closeOverlay('obs').then(() => {
+          obsOverlayActive = false;
+          updateOverlayButtons();
+          showToast('OBS overlay closed');
+        });
+      } else {
+        window.electronAPI.launchObsOverlay().then(() => {
+          obsOverlayActive = true;
+          updateOverlayButtons();
+          showToast('OBS Overlay active — ready in OBS Window Capture: "TMO Overlay [OBS]"');
+        });
+      }
+    }
+  }
+
   function updateOverlayButtons() {
     if (btnDesktopOverlay) {
       btnDesktopOverlay.classList.toggle('active', desktopOverlayActive);
       const textEl = btnDesktopOverlay.querySelector('span');
       if (textEl) textEl.textContent = desktopOverlayActive ? 'Desktop Overlay (On)' : 'Desktop Overlay';
     }
-  }
-
-  // In-App OBS Mode Toggle: Transforms Studio into pure clean canvas for OBS Window Capture (zero pop-outs!)
-  function toggleInAppObsMode() {
-    if (!appWindow) return;
-    const isObsMode = appWindow.classList.toggle('obs-capture-mode');
-    if (btnObsStage) btnObsStage.classList.toggle('active', isObsMode);
-    if (btnNavObsStage) btnNavObsStage.classList.toggle('active', isObsMode);
-    if (isObsMode) {
-      showToast('✨ OBS Mode: Select "TMO Studio" in OBS Window Capture! Press Esc to exit.');
-    } else {
-      showToast('Returned to TMO Studio controls');
+    if (btnObsOverlay) {
+      btnObsOverlay.classList.toggle('active', obsOverlayActive);
+      const textEl = btnObsOverlay.querySelector('span');
+      if (textEl) textEl.textContent = obsOverlayActive ? 'OBS Overlay (On)' : 'OBS Overlay';
     }
-  }
-
-  function exitInAppObsMode() {
-    if (!appWindow) return;
-    appWindow.classList.remove('obs-capture-mode');
-    if (btnObsStage) btnObsStage.classList.remove('active');
-    if (btnNavObsStage) btnNavObsStage.classList.remove('active');
-    showToast('Returned to TMO Studio controls');
   }
 
   if (btnDesktopOverlay) btnDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
   if (btnNavDesktopOverlay) btnNavDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
-  if (btnObsStage) btnObsStage.addEventListener('click', toggleInAppObsMode);
-  if (btnNavObsStage) btnNavObsStage.addEventListener('click', toggleInAppObsMode);
-  if (btnExitObs) btnExitObs.addEventListener('click', exitInAppObsMode);
-
-  document.addEventListener('keydown', (ev) => {
-    if (ev.key === 'Escape' && appWindow && appWindow.classList.contains('obs-capture-mode')) {
-      exitInAppObsMode();
-    }
-  });
+  if (btnObsOverlay) btnObsOverlay.addEventListener('click', toggleObsOverlay);
+  if (btnNavObsOverlay) btnNavObsOverlay.addEventListener('click', toggleObsOverlay);
 
   // Drawer Handlers
   function openDrawer(type) {
@@ -777,6 +771,10 @@ USER STYLE / THEME REQUEST:
     // Check overlay states
     window.electronAPI.isOverlayOpen('desktop').then((open) => {
       desktopOverlayActive = open;
+      updateOverlayButtons();
+    });
+    window.electronAPI.isOverlayOpen('obs').then((open) => {
+      obsOverlayActive = open;
       updateOverlayButtons();
     });
   }

@@ -2,6 +2,10 @@ const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage } = require
 const path = require('path');
 const fs = require('fs');
 
+// Ensure background and off-screen windows continue rendering for OBS capture
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+
 // 1. Initialize trackers + StateManager directly
 const LocalTracker = require('./lib/local-tracker');
 const SpotifyTracker = require('./lib/spotify-api');
@@ -91,29 +95,60 @@ function createMainWindow() {
   });
 }
 
+function getOffscreenCoordinates(width = 600, height = 250) {
+  try {
+    const displays = screen.getAllDisplays();
+    let minX = 0;
+    for (const d of displays) {
+      if (d.bounds.x < minX) minX = d.bounds.x;
+    }
+    return { x: minX - width - 1000, y: 0 };
+  } catch (e) {
+    return { x: -3000, y: 0 };
+  }
+}
+
 function createDesktopOverlay() {
   if (desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
+    desktopOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
+    desktopOverlayWindow.show();
     desktopOverlayWindow.focus();
-    return;
+    return desktopOverlayWindow;
   }
 
-  // Calculate default bounds or load from saved settings
   const boundsFile = path.join(app.getPath('userData'), '.widget-bounds.json');
-  let bounds = { width: 540, height: 220 };
-  
+  const defaultWidth = 540;
+  const defaultHeight = 220;
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width, height } = primaryDisplay.workAreaSize;
-  bounds.x = width - bounds.width - 20;
-  bounds.y = height - bounds.height - 20;
+  let bounds = {
+    width: defaultWidth,
+    height: defaultHeight,
+    x: width - defaultWidth - 20,
+    y: height - defaultHeight - 20
+  };
 
   try {
     if (fs.existsSync(boundsFile)) {
       const savedBounds = JSON.parse(fs.readFileSync(boundsFile, 'utf8'));
-      bounds = { ...bounds, ...savedBounds };
+      if (savedBounds.width && savedBounds.height) {
+        bounds.width = savedBounds.width;
+        bounds.height = savedBounds.height;
+      }
+      if (savedBounds.x !== undefined && savedBounds.y !== undefined) {
+        const onAnyScreen = screen.getAllDisplays().some(d => {
+          return savedBounds.x >= d.bounds.x - 50 &&
+                 savedBounds.x <= (d.bounds.x + d.bounds.width - 50) &&
+                 savedBounds.y >= d.bounds.y - 50 &&
+                 savedBounds.y <= (d.bounds.y + d.bounds.height - 50);
+        });
+        if (onAnyScreen) {
+          bounds.x = savedBounds.x;
+          bounds.y = savedBounds.y;
+        }
+      }
     }
-  } catch (err) {
-    console.error('Failed to load desktop overlay bounds:', err);
-  }
+  } catch (err) {}
 
   desktopOverlayWindow = new BrowserWindow({
     ...bounds,
@@ -128,21 +163,23 @@ function createDesktopOverlay() {
     webPreferences: {
       preload: path.join(__dirname, 'preload-overlay.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      backgroundThrottling: false
     }
   });
 
+  desktopOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  desktopOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   desktopOverlayWindow.loadFile(path.join(__dirname, 'public', 'overlay.html'));
 
-  // Save bounds on close
-  desktopOverlayWindow.on('close', () => {
-    try {
-      if (!desktopOverlayWindow.isDestroyed()) {
-        const finalBounds = desktopOverlayWindow.getBounds();
-        fs.writeFileSync(boundsFile, JSON.stringify(finalBounds));
-      }
-    } catch (err) {
-      console.error('Failed to save desktop overlay bounds:', err);
+  desktopOverlayWindow.on('moved', () => {
+    if (desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
+      try { fs.writeFileSync(boundsFile, JSON.stringify(desktopOverlayWindow.getBounds())); } catch (e) {}
+    }
+  });
+  desktopOverlayWindow.on('resize', () => {
+    if (desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
+      try { fs.writeFileSync(boundsFile, JSON.stringify(desktopOverlayWindow.getBounds())); } catch (e) {}
     }
   });
 
@@ -152,13 +189,16 @@ function createDesktopOverlay() {
 
   // Right-click context menu
   desktopOverlayWindow.webContents.on('context-menu', () => {
+    const isTop = desktopOverlayWindow.isAlwaysOnTop();
     const ctxMenu = Menu.buildFromTemplate([
+      { label: 'TMO — Desktop Overlay', enabled: false },
+      { type: 'separator' },
       {
-        label: 'Toggle Always On Top',
+        label: isTop ? '✓ Always On Top' : 'Always On Top',
         type: 'checkbox',
-        checked: desktopOverlayWindow.isAlwaysOnTop(),
+        checked: isTop,
         click: () => {
-          desktopOverlayWindow.setAlwaysOnTop(!desktopOverlayWindow.isAlwaysOnTop());
+          desktopOverlayWindow.setAlwaysOnTop(!isTop, 'screen-saver');
         }
       },
       {
@@ -170,13 +210,14 @@ function createDesktopOverlay() {
         click: () => {
           const disp = screen.getPrimaryDisplay();
           desktopOverlayWindow.setBounds({
-            width: 540,
-            height: 220,
-            x: disp.workAreaSize.width - 540 - 20,
-            y: disp.workAreaSize.height - 220 - 20
+            width: defaultWidth,
+            height: defaultHeight,
+            x: disp.workAreaSize.width - defaultWidth - 20,
+            y: disp.workAreaSize.height - defaultHeight - 20
           });
         }
       },
+      { type: 'separator' },
       {
         label: 'Close Overlay',
         click: () => desktopOverlayWindow.close()
@@ -184,15 +225,22 @@ function createDesktopOverlay() {
     ]);
     ctxMenu.popup({ window: desktopOverlayWindow });
   });
+
+  return desktopOverlayWindow;
 }
 
 function createObsOverlay() {
   if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
-    obsOverlayWindow.focus();
-    return;
+    return obsOverlayWindow;
   }
 
+  // By default, place OBS Overlay off-screen so it is NOT visible on the user's desktop,
+  // but remains fully rendered by DWM so OBS Window Capture can capture it!
+  const offscreen = getOffscreenCoordinates(600, 250);
+
   obsOverlayWindow = new BrowserWindow({
+    x: offscreen.x,
+    y: offscreen.y,
     width: 600,
     height: 250,
     title: 'TMO Overlay [OBS]',
@@ -203,11 +251,12 @@ function createObsOverlay() {
     resizable: true,
     hasShadow: false,
     skipTaskbar: true,
-    center: true,
+    show: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload-overlay.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      backgroundThrottling: false
     }
   });
 
@@ -219,6 +268,8 @@ function createObsOverlay() {
   obsOverlayWindow.on('closed', () => {
     obsOverlayWindow = null;
   });
+
+  return obsOverlayWindow;
 }
 
 function showSplashScreen(callback) {
@@ -310,6 +361,31 @@ function registerIpcHandlers() {
     if (mode === 'desktop') return !!(desktopOverlayWindow && !desktopOverlayWindow.isDestroyed());
     if (mode === 'obs') return !!(obsOverlayWindow && !obsOverlayWindow.isDestroyed());
     return false;
+  });
+
+  ipcMain.handle('toggle-obs-position', () => {
+    if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
+      const currentBounds = obsOverlayWindow.getBounds();
+      const primaryDisplay = screen.getPrimaryDisplay();
+      if (currentBounds.x < 0) {
+        obsOverlayWindow.setBounds({
+          x: Math.round(primaryDisplay.bounds.x + (primaryDisplay.bounds.width - 600) / 2),
+          y: Math.round(primaryDisplay.bounds.y + (primaryDisplay.bounds.height - 250) / 2),
+          width: 600,
+          height: 250
+        });
+        return { success: true, onScreen: true };
+      } else {
+        const offscreen = getOffscreenCoordinates(600, 250);
+        obsOverlayWindow.setBounds({
+          ...offscreen,
+          width: 600,
+          height: 250
+        });
+        return { success: true, onScreen: false };
+      }
+    }
+    return { success: false, error: 'OBS overlay not running' };
   });
 
   ipcMain.handle('simulator-track', (event, index) => {

@@ -51,8 +51,49 @@ function DetectPlatform($appId, $title, $artist) {
     return @{ id = "media"; name = "Desktop Player"; brandColor = "#a1a1aa" }
 }
 
+function MatchFilter($session, $filter) {
+    if (-not $session -or -not $filter -or $filter -eq "auto") { return $true }
+    $appId = if ($session.SourceAppUserModelId) { $session.SourceAppUserModelId } else { "" }
+    if ($filter -eq "spotify") {
+        return ($appId -like "*Spotify*")
+    }
+    if ($filter -eq "applemusic") {
+        return ($appId -like "*AppleMusic*" -or $appId -like "*iTunes*" -or $appId -like "*Apple.Music*")
+    }
+    if ($filter -eq "youtubemusic") {
+        if ($appId -like "*YouTubeMusic*") { return $true }
+        if ($appId -like "*Chrome*" -or $appId -like "*msedge*" -or $appId -like "*Brave*" -or $appId -like "*Firefox*") {
+            try {
+                $m = AwaitTask ($session.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties])
+                if ($m) {
+                    $combo = "$($m.Title) $($m.Artist)".ToLower()
+                    if ($combo -like "*youtube*") { return $true }
+                }
+            } catch {}
+            return $true
+        }
+        return $false
+    }
+    return $true
+}
+
 while ($true) {
     try {
+        # Read current audio source filter from settings.json
+        $filter = "auto"
+        $settingsPath = Join-Path $PSScriptRoot "..\settings.json"
+        if (Test-Path $settingsPath) {
+            try {
+                $raw = Get-Content $settingsPath -Raw -ErrorAction SilentlyContinue
+                if ($raw) {
+                    $json = $raw | ConvertFrom-Json
+                    if ($json.audioSource) {
+                        $filter = $json.audioSource.ToLower()
+                    }
+                }
+            } catch {}
+        }
+
         $managerOp = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager]::RequestAsync()
         $manager = AwaitTask $managerOp ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager])
 
@@ -60,30 +101,60 @@ while ($true) {
         if ($manager) {
             $sessions = $manager.GetSessions()
             
-            # 1. Prefer any session that is actively PLAYING
+            # 1. Prefer any session that is actively PLAYING and matches filter
             foreach ($s in $sessions) {
-                $pb = $s.GetPlaybackInfo()
-                if ($pb -and $pb.PlaybackStatus.ToString() -eq "Playing") {
-                    $targetSession = $s
-                    break
-                }
-            }
-
-            # 2. If none playing, pick Spotify, Apple Music, Amazon Music, or YouTube Music
-            if (-not $targetSession) {
-                foreach ($s in $sessions) {
-                    $id = $s.SourceAppUserModelId
-                    if ($id -like "*Spotify*" -or $id -like "*AppleMusic*" -or $id -like "*AmazonMusic*" -or $id -like "*Chrome*" -or $id -like "*msedge*") {
+                if (MatchFilter $s $filter) {
+                    $pb = $s.GetPlaybackInfo()
+                    if ($pb -and $pb.PlaybackStatus.ToString() -eq "Playing") {
                         $targetSession = $s
                         break
                     }
                 }
             }
 
-            # 3. Fallback to OS current session
+            # 2. If none playing, pick any session that matches filter
             if (-not $targetSession) {
+                foreach ($s in $sessions) {
+                    if (MatchFilter $s $filter) {
+                        $targetSession = $s
+                        break
+                    }
+                }
+            }
+
+            # 3. Fallback to OS current session only if filter is auto
+            if (-not $targetSession -and $filter -eq "auto") {
                 $targetSession = $manager.GetCurrentSession()
             }
+        }
+
+        # If specific source filter is active but no matching session exists
+        if (-not $targetSession -and $filter -ne "auto") {
+            $nameMap = @{ "spotify" = "Spotify"; "applemusic" = "Apple Music"; "youtubemusic" = "YouTube Music" }
+            $colorMap = @{ "spotify" = "#1db954"; "applemusic" = "#fa243c"; "youtubemusic" = "#ff0000" }
+            $dispName = if ($nameMap.ContainsKey($filter)) { $nameMap[$filter] } else { $filter }
+            $dispColor = if ($colorMap.ContainsKey($filter)) { $colorMap[$filter] } else { "#1db954" }
+
+            $obj = @{
+                type = "track_update"
+                source = "local"
+                app = $filter
+                platform = $filter
+                platformName = $dispName
+                brandColor = $dispColor
+                title = "Waiting for $dispName..."
+                artist = "No active $dispName playback"
+                album = ""
+                status = "Idle"
+                isPlaying = $false
+                position = 0
+                duration = 0
+                hasArt = $false
+                artBase64 = ""
+            }
+            [Console]::WriteLine(($obj | ConvertTo-Json -Compress))
+            Start-Sleep -Milliseconds 600
+            continue
         }
 
         if ($targetSession) {

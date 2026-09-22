@@ -1,10 +1,43 @@
 (function () {
   const container = document.getElementById('overlay-container');
+  const urlParams = new URLSearchParams(window.location.search);
+  const isPreview = urlParams.has('preview') || (window.parent && window.parent !== window);
+
+  if (isPreview) {
+    document.body.classList.add('is-preview');
+    document.documentElement.classList.add('is-preview');
+  }
+
   let currentTheme = null;
   let currentOrientation = null;
   let currentTrack = null;
   let visualizer = null;
   let currentArtDataUrl = null;
+
+  // Crisp modern SVG fallback cover so artwork never displays as a broken icon
+  const DEFAULT_COVER = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><defs><linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="%23181922"/><stop offset="100%" stop-color="%230c0d12"/></linearGradient></defs><rect width="300" height="300" rx="20" fill="url(%23bg)"/><circle cx="150" cy="150" r="70" fill="%23242531"/><circle cx="150" cy="150" r="26" fill="%2310b981" fill-opacity="0.25" stroke="%2310b981" stroke-width="2"/><path d="M144 136v28a12 12 0 1 0 8 11.2V146h18v-10h-26z" fill="%2334d399"/></svg>';
+
+  // Realistic sample track for preview stage before live audio is detected
+  const SAMPLE_PREVIEW_TRACK = {
+    title: 'Blinding Lights',
+    artist: 'The Weeknd',
+    album: 'After Hours',
+    isPlaying: true,
+    position: 78,
+    duration: 200,
+    platform: 'spotify',
+    platformName: 'Spotify',
+    brandColor: '#1db954',
+    source: 'spotify',
+    settings: {
+      activeTheme: 'vinyl',
+      orientation: 'horizontal',
+      showProgressBar: true,
+      showVisualizer: true,
+      showTimecode: true,
+      accentColor: '#1db954'
+    }
+  };
 
   function formatTime(seconds) {
     const s = Math.floor(seconds || 0);
@@ -18,7 +51,7 @@
   }
 
   function getArtSrc() {
-    return currentArtDataUrl || '';
+    return currentArtDataUrl || DEFAULT_COVER;
   }
 
   function renderShell(theme, orientation) {
@@ -181,8 +214,9 @@
     const autoHide = Boolean(settings.autoHideWhenPaused);
     const isPlaying = Boolean(track.isPlaying);
 
-    // Auto-hide when paused toggle
-    if (autoHide && !isPlaying) {
+    // Auto-hide when paused toggle (bypassed in preview mode so preview is always visible)
+    const hasRealTrack = track.title && !track.title.startsWith('Waiting for');
+    if (!isPreview && autoHide && !isPlaying && hasRealTrack) {
       rootEl.classList.add('overlay-hidden');
     } else {
       rootEl.classList.remove('overlay-hidden');

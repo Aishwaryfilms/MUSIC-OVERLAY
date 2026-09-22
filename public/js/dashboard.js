@@ -251,7 +251,18 @@ document.addEventListener('DOMContentLoaded', () => {
       sourceItems.forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
       const src = btn.getAttribute('data-source');
-      showToast(src === 'auto' ? 'Auto-Detecting all audio sources' : `Filter set to ${src.toUpperCase()}`);
+      
+      if (window.electronAPI) {
+        window.electronAPI.saveSettings({ audioSource: src }).then(() => {
+          const names = {
+            auto: 'Auto Detect (All Sources)',
+            spotify: 'Spotify Only',
+            applemusic: 'Apple Music Only',
+            youtubemusic: 'YouTube Music Only'
+          };
+          showToast(`Active Source: ${names[src] || src.toUpperCase()}`);
+        });
+      }
     });
   });
 
@@ -287,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.electronAPI.launchObsOverlay().then(() => {
           obsOverlayActive = true;
           updateOverlayButtons();
-          showToast('OBS overlay active — select "TMO Overlay [OBS]" in OBS Window Capture');
+          showToast('OBS Overlay active (hidden from desktop, ready for OBS Window Capture)');
         });
       }
     }
@@ -306,10 +317,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function toggleObsOnScreen(ev) {
+    ev.preventDefault();
+    if (window.electronAPI && obsOverlayActive) {
+      window.electronAPI.toggleObsPosition().then((res) => {
+        if (res.onScreen) {
+          showToast('OBS Overlay brought on-screen for preview');
+        } else {
+          showToast('OBS Overlay sent off-screen (clean desktop)');
+        }
+      });
+    }
+  }
+
   if (btnDesktopOverlay) btnDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
   if (btnNavDesktopOverlay) btnNavDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
-  if (btnObsOverlay) btnObsOverlay.addEventListener('click', toggleObsOverlay);
-  if (btnNavObsOverlay) btnNavObsOverlay.addEventListener('click', toggleObsOverlay);
+  if (btnObsOverlay) {
+    btnObsOverlay.addEventListener('click', toggleObsOverlay);
+    btnObsOverlay.addEventListener('contextmenu', toggleObsOnScreen);
+  }
+  if (btnNavObsOverlay) {
+    btnNavObsOverlay.addEventListener('click', toggleObsOverlay);
+    btnNavObsOverlay.addEventListener('contextmenu', toggleObsOnScreen);
+  }
 
   // Drawer Handlers
   function openDrawer(type) {
@@ -619,6 +649,11 @@ USER STYLE / THEME REQUEST:
         customThemes = [{ id: 'custom-1', name: 'Custom Theme', css: s.customCss }];
       }
       renderCustomThemeChips();
+
+      const activeSource = s.audioSource || 'auto';
+      sourceItems.forEach((b) => {
+        b.classList.toggle('active', b.getAttribute('data-source') === activeSource);
+      });
 
       if (s.activeTheme) {
         currentTheme = s.activeTheme;

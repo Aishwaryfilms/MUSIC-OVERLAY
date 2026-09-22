@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>TMO — Throttl Music Overlay</title>
-  <link rel="icon" type="image/png" href="/assets/icon.png" />
-  <link rel="stylesheet" href="/css/dashboard.css" />
+  <link rel="icon" type="image/png" href="assets/icon.png" />
+  <link rel="stylesheet" href="css/dashboard.css" />
 </head>
 <body>
 
@@ -85,13 +85,13 @@
           <div class="sidebar-section">
             <div class="sidebar-heading">Display Output</div>
             <div class="sidebar-nav">
-              <button class="sidebar-item" id="btn-nav-desktop-hud">
+              <button class="sidebar-item" id="btn-nav-desktop-overlay">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
-                <span>Float on Desktop</span>
+                <span>Desktop Overlay</span>
               </button>
-              <button class="sidebar-item" id="btn-nav-copy-obs">
+              <button class="sidebar-item" id="btn-nav-obs-overlay">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-                <span>Copy OBS Link</span>
+                <span>OBS Overlay</span>
               </button>
             </div>
           </div>
@@ -126,7 +126,7 @@
         <div class="now-playing-banner">
           <div class="banner-left">
             <div class="banner-art">
-              <img id="banner-cover" src="/api/current-art" alt="Art" />
+              <img id="banner-cover" src="" alt="Art" />
             </div>
             <div class="banner-meta">
               <div class="banner-title" id="banner-title">Waiting for audio playback...</div>
@@ -147,7 +147,7 @@
 
         <!-- Center Stage Preview Box -->
         <div class="stage-preview-box checker" id="stage-box">
-          <iframe id="preview-frame" class="preview-stage-iframe" src="/overlay"></iframe>
+          <iframe id="preview-frame" class="preview-stage-iframe" src="overlay.html"></iframe>
         </div>
 
         <!-- Bottom Controls Bar -->
@@ -165,13 +165,13 @@
 
           <!-- Quick Action Buttons -->
           <div class="action-btn-group">
-            <button class="btn-apple" id="btn-launch-hud" title="Toggle floating widget on your desktop">
+            <button class="btn-apple" id="btn-desktop-overlay" title="Toggle floating transparent overlay on your desktop">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
-              <span id="float-btn-text">Float on Desktop</span>
+              <span>Desktop Overlay</span>
             </button>
-            <button class="btn-apple-outline" id="btn-copy-master" title="Copy OBS Browser Source link">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
-              <span id="copy-btn-text">Copy Link</span>
+            <button class="btn-apple-outline" id="btn-obs-overlay" title="Launch transparent overlay for OBS Window Capture">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <span>OBS Overlay</span>
             </button>
           </div>
 
@@ -193,19 +193,8 @@
         
         <div class="drawer-item">
           <div>
-            <div class="drawer-label">Float on Desktop (Always on Top)</div>
-            <div class="drawer-desc">Keep visible over apps. Turn off for clean OBS capture.</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" id="toggle-float" />
-            <span class="slider round"></span>
-          </label>
-        </div>
-
-        <div class="drawer-item">
-          <div>
             <div class="drawer-label">Auto-Hide When Paused</div>
-            <div class="drawer-desc">Vanishes widget when gaming or paused</div>
+            <div class="drawer-desc">Vanishes widget when music is paused</div>
           </div>
           <label class="switch">
             <input type="checkbox" id="toggle-autohide" />
@@ -237,8 +226,8 @@
 
         <div class="drawer-item">
           <div>
-            <div class="drawer-label">OBS Background Mode</div>
-            <div class="drawer-desc">Transparent for WGC, or Chroma Key</div>
+            <div class="drawer-label">Overlay Background Mode</div>
+            <div class="drawer-desc">Transparent for Window Capture, or Chroma Key</div>
           </div>
           <div class="bg-mode-strip">
             <button class="bg-chip active" data-bg="transparent">Transparent</button>
@@ -300,8 +289,8 @@
 
   </div>
 
-  <div id="toast">Link copied to clipboard</div>
+  <div id="toast">Ready</div>
 
-  <script src="/js/dashboard.js"></script>
+  <script src="js/dashboard.js"></script>
 </body>
 </html>

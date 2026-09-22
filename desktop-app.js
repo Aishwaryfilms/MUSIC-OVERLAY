@@ -1,290 +1,420 @@
-const { app, BrowserWindow, screen, ipcMain, Menu, Tray, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, screen, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+// 1. Initialize trackers + StateManager directly
+const LocalTracker = require('./lib/local-tracker');
+const SpotifyTracker = require('./lib/spotify-api');
+const StateManager = require('./lib/state-manager');
+
+const localTracker = new LocalTracker();
+const spotifyTracker = new SpotifyTracker();
+const stateManager = new StateManager(localTracker, spotifyTracker);
+
+// Start tracking immediately
+localTracker.start();
+spotifyTracker.startPolling();
+
+// 13. Set App User Model ID
 app.setAppUserModelId('Throttl.MusicOverlay.TMO');
 
-const boundsFile = path.join(__dirname, '.widget-bounds.json');
-const iconPath = path.join(__dirname, 'assets', 'icon.png');
-
-let splashWindow = null;
-let hudWindow = null;
+// Global references to prevent garbage collection
 let mainWindow = null;
+let desktopOverlayWindow = null;
+let obsOverlayWindow = null;
 let tray = null;
-let isHudFloating = false;
+let splashWindow = null;
 
-function loadSavedBounds() {
-  try {
-    if (fs.existsSync(boundsFile)) {
-      return JSON.parse(fs.readFileSync(boundsFile, 'utf8'));
+// 14. Helper: Get artwork as Data URL
+function getArtDataUrl() {
+  const artBuffer = localTracker.getArtBuffer();
+  if (artBuffer && artBuffer.length > 0) {
+    return 'data:image/jpeg;base64,' + artBuffer.toString('base64');
+  }
+  // Return a fallback SVG as data URI
+  const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300" viewBox="0 0 300 300"><rect width="300" height="300" fill="#18181b"/><circle cx="150" cy="150" r="70" fill="#27272a"/><circle cx="150" cy="150" r="24" fill="#09090b"/><path d="M142 135v30a12 12 0 1 0 8 11.3V145h20v-10h-28z" fill="#71717a"/></svg>`;
+  return 'data:image/svg+xml;base64,' + Buffer.from(FALLBACK_SVG).toString('base64');
+}
+
+// Helper: Broadcast to all active windows
+function sendToAllWindows(channel, data) {
+  const windows = [mainWindow, desktopOverlayWindow, obsOverlayWindow];
+  for (const win of windows) {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send(channel, data);
     }
-  } catch (e) {}
-  return null;
+  }
 }
 
-function saveBounds(bounds) {
-  try {
-    fs.writeFileSync(boundsFile, JSON.stringify(bounds), 'utf8');
-  } catch (e) {}
-}
+// 7. Track update broadcasting
+stateManager.on('track', (track) => {
+  const artDataUrl = getArtDataUrl();
+  sendToAllWindows('track-update', { track, artDataUrl });
+});
 
-function createTray() {
-  if (tray) return;
+// 8. Settings update broadcasting
+stateManager.on('settings_update', (settings) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('settings-update', settings);
+  }
+});
 
-  try {
-    const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
-    tray = new Tray(trayIcon);
-    tray.setToolTip('TMO — Throttl Music Overlay');
+// Window Creation Functions
 
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: 'TMO Studio',
-        click: () => {
-          createMainWindow();
-        }
-      },
-      {
-        label: 'Float on Desktop',
-        click: () => {
-          createDesktopHud({ float: true });
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Copy OBS Link',
-        click: () => {
-          const { clipboard } = require('electron');
-          clipboard.writeText('http://localhost:3000/overlay');
-        }
-      },
-      { type: 'separator' },
-      {
-        label: 'Exit TMO',
-        click: () => {
-          app.isQuitting = true;
-          app.quit();
-        }
-      }
-    ]);
-
-    tray.setContextMenu(contextMenu);
-
-    tray.on('click', () => {
-      createMainWindow();
-    });
-  } catch (e) {}
-}
-
-function showSplashScreen(onDone) {
-  splashWindow = new BrowserWindow({
-    width: 480,
-    height: 290,
-    frame: false,
-    transparent: true,
-    alwaysOnTop: true,
-    resizable: false,
-    center: true,
-    skipTaskbar: true,
-    hasShadow: true,
-    backgroundColor: '#00000000',
-    webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true
-    }
-  });
-
-  const splashFile = path.join(__dirname, 'public', 'splash.html');
-  splashWindow.loadFile(splashFile);
-
-  // Display for 1800ms (1.8 seconds) so branding and creator name are clearly appreciated
-  setTimeout(() => {
-    if (splashWindow && !splashWindow.isDestroyed()) {
-      splashWindow.close();
-      splashWindow = null;
-    }
-    if (typeof onDone === 'function') onDone();
-  }, 1800);
-}
-
-function createDesktopHud(options = {}) {
-  const shouldFloat = options.float !== undefined ? Boolean(options.float) : isHudFloating;
-  isHudFloating = shouldFloat;
-
-  if (hudWindow && !hudWindow.isDestroyed()) {
-    hudWindow.setAlwaysOnTop(shouldFloat);
-    hudWindow.show();
-    hudWindow.focus();
-    return hudWindow;
+function createMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    return;
   }
 
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
-
-  const saved = loadSavedBounds();
-  const defaultWidth = 540;
-  const defaultHeight = 220;
-
-  hudWindow = new BrowserWindow({
-    title: 'TMO — Throttl Music Overlay',
-    icon: iconPath,
-    width: saved ? saved.width : defaultWidth,
-    height: saved ? saved.height : defaultHeight,
-    x: saved ? saved.x : Math.max(20, screenWidth - defaultWidth - 40),
-    y: saved ? saved.y : Math.max(20, screenHeight - defaultHeight - 60),
+  mainWindow = new BrowserWindow({
+    width: 1024,
+    height: 768,
+    minWidth: 800,
+    minHeight: 600,
+    title: 'TMO Studio',
     frame: false,
     transparent: true,
-    alwaysOnTop: shouldFloat,
-    skipTaskbar: false,
-    hasShadow: false,
-    resizable: true,
-    backgroundColor: '#00000000',
     webPreferences: {
-      nodeIntegration: false,
-      contextIsolation: true
+      preload: path.join(__dirname, 'preload-dashboard.js'),
+      contextIsolation: true,
+      nodeIntegration: false
     }
   });
 
-  hudWindow.loadURL('http://localhost:3000/overlay');
+  // 3. Load via loadFile
+  mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
 
-  hudWindow.on('moved', () => {
-    if (hudWindow) saveBounds(hudWindow.getBounds());
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+function createDesktopOverlay() {
+  if (desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
+    desktopOverlayWindow.focus();
+    return;
+  }
+
+  // Calculate default bounds or load from saved settings
+  const boundsFile = path.join(app.getPath('userData'), '.widget-bounds.json');
+  let bounds = { width: 540, height: 220 };
+  
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width, height } = primaryDisplay.workAreaSize;
+  bounds.x = width - bounds.width - 20;
+  bounds.y = height - bounds.height - 20;
+
+  try {
+    if (fs.existsSync(boundsFile)) {
+      const savedBounds = JSON.parse(fs.readFileSync(boundsFile, 'utf8'));
+      bounds = { ...bounds, ...savedBounds };
+    }
+  } catch (err) {
+    console.error('Failed to load desktop overlay bounds:', err);
+  }
+
+  desktopOverlayWindow = new BrowserWindow({
+    ...bounds,
+    title: 'TMO Overlay',
+    transparent: true,
+    frame: false,
+    backgroundColor: '#00000000',
+    alwaysOnTop: true,
+    resizable: true,
+    hasShadow: false,
+    skipTaskbar: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-overlay.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
   });
 
-  hudWindow.on('resize', () => {
-    if (hudWindow) saveBounds(hudWindow.getBounds());
+  desktopOverlayWindow.loadFile(path.join(__dirname, 'public', 'overlay.html'));
+
+  // Save bounds on close
+  desktopOverlayWindow.on('close', () => {
+    try {
+      if (!desktopOverlayWindow.isDestroyed()) {
+        const finalBounds = desktopOverlayWindow.getBounds();
+        fs.writeFileSync(boundsFile, JSON.stringify(finalBounds));
+      }
+    } catch (err) {
+      console.error('Failed to save desktop overlay bounds:', err);
+    }
   });
 
-  hudWindow.webContents.on('context-menu', (e, params) => {
-    const isTop = hudWindow.isAlwaysOnTop();
-    const contextMenu = Menu.buildFromTemplate([
-      { label: 'TMO — Throttl Music Overlay', enabled: false },
-      { type: 'separator' },
+  desktopOverlayWindow.on('closed', () => {
+    desktopOverlayWindow = null;
+  });
+
+  // Right-click context menu
+  desktopOverlayWindow.webContents.on('context-menu', () => {
+    const ctxMenu = Menu.buildFromTemplate([
       {
-        label: isTop ? '✓ Float on Desktop (Always on Top)' : 'Float on Desktop (Always on Top)',
+        label: 'Toggle Always On Top',
         type: 'checkbox',
-        checked: isTop,
+        checked: desktopOverlayWindow.isAlwaysOnTop(),
         click: () => {
-          isHudFloating = !isTop;
-          hudWindow.setAlwaysOnTop(isHudFloating);
+          desktopOverlayWindow.setAlwaysOnTop(!desktopOverlayWindow.isAlwaysOnTop());
         }
       },
       {
         label: 'Open TMO Studio',
         click: () => createMainWindow()
       },
-      { type: 'separator' },
       {
         label: 'Reset Position',
         click: () => {
-          hudWindow.setPosition(screenWidth - defaultWidth - 40, screenHeight - defaultHeight - 60);
-          saveBounds(hudWindow.getBounds());
+          const disp = screen.getPrimaryDisplay();
+          desktopOverlayWindow.setBounds({
+            width: 540,
+            height: 220,
+            x: disp.workAreaSize.width - 540 - 20,
+            y: disp.workAreaSize.height - 220 - 20
+          });
         }
       },
-      { type: 'separator' },
-      { label: 'Close Overlay', role: 'close' }
+      {
+        label: 'Close Overlay',
+        click: () => desktopOverlayWindow.close()
+      }
     ]);
-    contextMenu.popup();
+    ctxMenu.popup({ window: desktopOverlayWindow });
   });
-
-  hudWindow.on('closed', () => {
-    hudWindow = null;
-  });
-
-  return hudWindow;
 }
 
-function createMainWindow() {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-    return mainWindow;
+function createObsOverlay() {
+  if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
+    obsOverlayWindow.focus();
+    return;
   }
 
-  mainWindow = new BrowserWindow({
-    title: 'TMO — Throttl Music Overlay',
-    icon: iconPath,
-    width: 1060,
-    height: 720,
-    minWidth: 900,
-    minHeight: 620,
+  obsOverlayWindow = new BrowserWindow({
+    width: 600,
+    height: 250,
+    title: 'TMO Overlay [OBS]',
+    transparent: true,
     frame: false,
-    backgroundColor: '#0c0c0e',
-    skipTaskbar: false,
+    backgroundColor: '#00000000',
+    alwaysOnTop: false,
+    resizable: true,
+    hasShadow: false,
+    skipTaskbar: true,
+    center: true,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      preload: path.join(__dirname, 'preload-overlay.js'),
+      contextIsolation: true,
+      nodeIntegration: false
     }
   });
 
-  mainWindow.loadURL('http://localhost:3000');
+  // Click-through functionality for OBS
+  obsOverlayWindow.setIgnoreMouseEvents(true, { forward: true });
 
-  mainWindow.on('closed', () => {
-    mainWindow = null;
-    if (!hudWindow) {
-      app.quit();
-    }
+  obsOverlayWindow.loadFile(path.join(__dirname, 'public', 'overlay.html'));
+
+  obsOverlayWindow.on('closed', () => {
+    obsOverlayWindow = null;
   });
-
-  return mainWindow;
 }
 
-// Native Window Controls IPC
-ipcMain.on('window-minimize', () => {
-  if (mainWindow) mainWindow.minimize();
-});
+function showSplashScreen(callback) {
+  splashWindow = new BrowserWindow({
+    width: 400,
+    height: 500,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
 
-ipcMain.on('window-maximize', () => {
-  if (mainWindow) {
-    if (mainWindow.isMaximized()) mainWindow.unmaximize();
-    else mainWindow.maximize();
-  }
-});
+  splashWindow.loadFile(path.join(__dirname, 'public', 'splash.html'));
+  
+  // Minimal dummy logic to represent loading phase
+  setTimeout(() => {
+    if (splashWindow && !splashWindow.isDestroyed()) {
+      splashWindow.close();
+    }
+    if (callback) callback();
+  }, 2000);
+}
 
-ipcMain.on('window-close', () => {
-  app.isQuitting = true;
-  app.quit();
-});
+// 6. IPC Handlers Registration
+function registerIpcHandlers() {
+  ipcMain.handle('get-state', () => {
+    const track = stateManager.getCurrentTrack();
+    return {
+      track: { ...track, activeMode: stateManager.mode, settings: stateManager.settings },
+      spotifyConnected: spotifyTracker.isConnected(),
+      localActive: localTracker.getCurrentTrack().status !== 'Closed',
+      artDataUrl: getArtDataUrl()
+    };
+  });
 
-ipcMain.on('launch-desktop-hud', (event, opts) => {
-  createDesktopHud(opts || { float: true });
-});
+  ipcMain.handle('get-settings', () => {
+    return {
+      settings: stateManager.settings,
+      spotifyConnected: spotifyTracker.isConnected(),
+      spotifyConfig: {
+        clientId: spotifyTracker.config.clientId ? `${spotifyTracker.config.clientId.substring(0, 6)}...` : '',
+        redirectUri: spotifyTracker.config.redirectUri
+      }
+    };
+  });
 
-ipcMain.on('set-hud-float', (event, shouldFloat) => {
-  isHudFloating = Boolean(shouldFloat);
-  if (hudWindow && !hudWindow.isDestroyed()) {
-    hudWindow.setAlwaysOnTop(isHudFloating);
-  }
-});
+  ipcMain.handle('save-settings', (event, data) => {
+    stateManager.saveSettings(data);
+    sendToAllWindows('settings-update', stateManager.settings);
+    return { success: true, settings: stateManager.settings };
+  });
 
+  ipcMain.handle('get-artwork', () => {
+    return getArtDataUrl();
+  });
+
+  ipcMain.handle('get-initial-state', () => {
+    const track = stateManager.getCurrentTrack();
+    return {
+      track: { ...track, activeMode: stateManager.mode, settings: stateManager.settings },
+      settings: stateManager.settings,
+      artDataUrl: getArtDataUrl()
+    };
+  });
+
+  ipcMain.handle('launch-desktop-overlay', () => {
+    createDesktopOverlay();
+    return { success: true };
+  });
+
+  ipcMain.handle('launch-obs-overlay', () => {
+    createObsOverlay();
+    return { success: true };
+  });
+
+  ipcMain.handle('close-overlay', (event, mode) => {
+    if (mode === 'desktop' && desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
+      desktopOverlayWindow.close();
+    } else if (mode === 'obs' && obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
+      obsOverlayWindow.close();
+    }
+    return { success: true };
+  });
+
+  ipcMain.handle('is-overlay-open', (event, mode) => {
+    if (mode === 'desktop') return !!(desktopOverlayWindow && !desktopOverlayWindow.isDestroyed());
+    if (mode === 'obs') return !!(obsOverlayWindow && !obsOverlayWindow.isDestroyed());
+    return false;
+  });
+
+  ipcMain.handle('simulator-track', (event, index) => {
+    if (typeof stateManager.setSimulatorTrack === 'function') {
+      stateManager.setSimulatorTrack(index);
+    }
+    return { success: true, track: stateManager.getCurrentTrack() };
+  });
+
+  ipcMain.handle('simulator-toggle', () => {
+    if (typeof stateManager.toggleSimulatorPlay === 'function') {
+      stateManager.toggleSimulatorPlay();
+    }
+    return { success: true, track: stateManager.getCurrentTrack() };
+  });
+
+  ipcMain.handle('get-spotify-auth-url', () => {
+    return { url: spotifyTracker.getAuthUrl() };
+  });
+
+  ipcMain.handle('save-spotify-config', (event, config) => {
+    if (typeof spotifyTracker.saveConfig === 'function') {
+      spotifyTracker.saveConfig(config);
+    }
+    return { success: true };
+  });
+
+  ipcMain.on('relay-to-overlays', (event, { channel, data }) => {
+    if (desktopOverlayWindow && !desktopOverlayWindow.isDestroyed()) {
+      desktopOverlayWindow.webContents.send(channel, data);
+    }
+    if (obsOverlayWindow && !obsOverlayWindow.isDestroyed()) {
+      obsOverlayWindow.webContents.send(channel, data);
+    }
+  });
+
+  // Window control handlers for dashboard
+  ipcMain.on('window-minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) win.minimize();
+  });
+
+  ipcMain.on('window-maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) {
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
+    }
+  });
+
+  ipcMain.on('window-close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) win.close();
+  });
+}
+
+// 11. App Startup
 app.whenReady().then(() => {
+  // Start minimal OAuth server
+  const startServer = require('./server');
+  startServer(spotifyTracker);
+
+  // 9. Tray Menu
   try {
-    require('./server');
-  } catch (e) {
-    // Port 3000 may already be running from external server instance
+    const iconPath = path.join(__dirname, 'assets', 'icon.png');
+    const trayIcon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+    tray = new Tray(trayIcon);
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'TMO Studio', click: () => createMainWindow() },
+      { label: 'Desktop Overlay', click: () => createDesktopOverlay() },
+      { label: 'OBS Overlay', click: () => createObsOverlay() },
+      { type: 'separator' },
+      { label: 'Exit TMO', click: () => app.quit() }
+    ]);
+    tray.setToolTip('TMO — Throttl Music Overlay');
+    tray.setContextMenu(contextMenu);
+    tray.on('click', () => createMainWindow());
+  } catch (err) {
+    console.error('Failed to create tray icon:', err);
   }
 
-  createTray();
+  registerIpcHandlers();
 
-  const args = process.argv;
-  if (args.includes('--hud-only')) {
-    createDesktopHud({ float: args.includes('--float') });
+  // Handle command line arguments
+  if (process.argv.includes('--hud-only')) {
+    createDesktopOverlay();
   } else {
-    // Show splash screen for ~0.9s before opening the main studio window
     showSplashScreen(() => {
       createMainWindow();
     });
   }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow();
-    }
+    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
   });
 });
 
 app.on('window-all-closed', () => {
-  if (!hudWindow) {
+  if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// 12. Cleanup on quit
+app.on('before-quit', () => {
+  localTracker.stop();
+  spotifyTracker.stopPolling();
 });

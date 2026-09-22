@@ -1,16 +1,10 @@
 (function () {
-  const urlParams = new URLSearchParams(window.location.search);
-  const paramTheme = urlParams.get('theme');
-  const paramOrientation = urlParams.get('orientation');
-  const paramScale = urlParams.get('scale') ? parseFloat(urlParams.get('scale')) : null;
-  const paramAccent = urlParams.get('accent');
-
   const container = document.getElementById('overlay-container');
   let currentTheme = null;
   let currentOrientation = null;
   let currentTrack = null;
   let visualizer = null;
-  let ws = null;
+  let currentArtDataUrl = null;
 
   function formatTime(seconds) {
     const s = Math.floor(seconds || 0);
@@ -21,6 +15,10 @@
 
   function isCustomThemeId(th) {
     return th === 'custom' || (typeof th === 'string' && th.startsWith('custom-'));
+  }
+
+  function getArtSrc() {
+    return currentArtDataUrl || '';
   }
 
   function renderShell(theme, orientation) {
@@ -35,13 +33,15 @@
     const wrapper = document.createElement('div');
     wrapper.id = 'theme-root';
 
+    const artSrc = getArtSrc();
+
     if (theme === 'vinyl') {
       wrapper.className = 'theme-vinyl';
       wrapper.innerHTML = `
         <div class="vinyl-record" id="vinyl-disc">
           <div class="vinyl-grooves"></div>
           <div class="vinyl-center">
-            <img id="track-art" src="/api/current-art" alt="Cover" />
+            <img id="track-art" src="${artSrc}" alt="Cover" />
             <div class="spindle"></div>
           </div>
         </div>
@@ -65,7 +65,7 @@
       wrapper.className = `theme-card orientation-${currentOrientation}`;
       wrapper.innerHTML = `
         <div class="card-art">
-          <img id="track-art" src="/api/current-art" alt="Cover" />
+          <img id="track-art" src="${artSrc}" alt="Cover" />
         </div>
         <div class="card-content">
           <div class="track-title" id="track-title">Waiting for track...</div>
@@ -85,7 +85,7 @@
       wrapper.className = 'theme-pill';
       wrapper.innerHTML = `
         <div class="pill-art" id="pill-art-disc">
-          <img id="track-art" src="/api/current-art" alt="Cover" />
+          <img id="track-art" src="${artSrc}" alt="Cover" />
         </div>
         <div class="pill-text">
           <span class="pill-title" id="track-title">Waiting for track...</span>
@@ -101,7 +101,7 @@
       wrapper.innerHTML = `
         <div class="cassette-head">
           <div class="cassette-label-art">
-            <img id="track-art-mini" src="/api/current-art" alt="Thumb" />
+            <img id="track-art-mini" src="${artSrc}" alt="Thumb" />
           </div>
           <div class="cassette-info">
             <div class="track-title" id="track-title">Waiting for track...</div>
@@ -111,7 +111,7 @@
         </div>
         <div class="cassette-chassis">
           <div class="cassette-chassis-art">
-            <img id="track-art-bg" src="/api/current-art" alt="Art Backing" />
+            <img id="track-art-bg" src="${artSrc}" alt="Art Backing" />
           </div>
           <div class="spool-gear spool-spinning" id="spool-left">
             <div class="spool-teeth"></div>
@@ -132,7 +132,7 @@
       wrapper.className = 'theme-custom theme-card orientation-horizontal';
       wrapper.innerHTML = `
         <div class="card-art">
-          <img id="track-art" src="/api/current-art" alt="Cover" />
+          <img id="track-art" src="${artSrc}" alt="Cover" />
         </div>
         <div class="card-content">
           <div class="track-title" id="track-title">Waiting for track...</div>
@@ -161,7 +161,7 @@
     const canvas = document.getElementById('wave-canvas');
     if (canvas && window.FluidWaveVisualizer) {
       visualizer = new FluidWaveVisualizer(canvas, {
-        lineColor: paramAccent || '#1db954',
+        lineColor: '#1db954',
         secondaryColor: 'rgba(255, 255, 255, 0.25)',
         isPlaying: false
       });
@@ -194,7 +194,7 @@
     rootEl.classList.toggle('hide-timecode', settings.showTimecode === false);
 
     // Scale
-    const activeScale = paramScale !== null ? paramScale : (settings.scale || 1.0);
+    const activeScale = settings.scale || 1.0;
     if (activeScale !== 1.0) {
       container.style.transform = `scale(${activeScale})`;
       container.style.transformOrigin = 'center center';
@@ -203,7 +203,7 @@
     }
 
     // Accent color
-    const activeAccent = paramAccent || settings.accentColor || '#1db954';
+    const activeAccent = settings.accentColor || '#1db954';
     document.documentElement.style.setProperty('--accent', activeAccent);
     if (visualizer) visualizer.setColor(activeAccent);
 
@@ -257,15 +257,17 @@
     if (titleEl) titleEl.textContent = track.title || 'No Track Playing';
     if (artistEl) artistEl.textContent = track.artist || (track.isPlaying ? 'Unknown Artist' : 'Paused / Idle');
 
-    // Artwork
-    const artSrc = track.artUrl || (track.hasArt ? `/api/current-art?t=${Date.now()}` : '/api/current-art');
-    if (artEl) artEl.src = artSrc;
-    if (artMiniEl) artMiniEl.src = artSrc;
-    if (artBgEl) artBgEl.src = artSrc;
+    // Artwork — use base64 data URI from IPC
+    const artSrc = currentArtDataUrl || '';
+    if (artEl && artSrc) artEl.src = artSrc;
+    if (artMiniEl && artSrc) artMiniEl.src = artSrc;
+    if (artBgEl && artSrc) artBgEl.src = artSrc;
 
     // Expose live artwork URL as CSS custom property on root and theme element
-    rootEl.style.setProperty('--track-art-url', `url("${artSrc}")`);
-    document.documentElement.style.setProperty('--track-art-url', `url("${artSrc}")`);
+    if (artSrc) {
+      rootEl.style.setProperty('--track-art-url', `url("${artSrc}")`);
+      document.documentElement.style.setProperty('--track-art-url', `url("${artSrc}")`);
+    }
 
     // Status pill & Platform Badge
     const platformBadge = document.getElementById('platform-badge');
@@ -339,13 +341,16 @@
     }
   }
 
-  function handleStateUpdate(track) {
+  function handleStateUpdate(track, artDataUrl) {
     if (!track) return;
+    if (artDataUrl !== undefined) {
+      currentArtDataUrl = artDataUrl;
+    }
     currentTrack = track;
 
     const settings = track.settings || {};
-    const activeTheme = paramTheme || settings.activeTheme || 'vinyl';
-    const activeOrientation = paramOrientation || settings.orientation || 'horizontal';
+    const activeTheme = settings.activeTheme || 'vinyl';
+    const activeOrientation = settings.orientation || 'horizontal';
 
     const bgMode = settings.backgroundMode || 'transparent';
     document.body.classList.remove('bg-chroma-green', 'bg-chroma-magenta');
@@ -359,59 +364,48 @@
     }
   }
 
-  // Direct postMessage listener from parent dashboard (instant 0ms update)
-  window.addEventListener('message', (e) => {
-    if (e.data && e.data.type === 'switch_theme') {
+  // === IPC-BASED COMMUNICATION (replaces WebSocket + fetch) ===
+
+  // Listen for live track updates from main process
+  if (window.electronAPI) {
+    window.electronAPI.onTrackUpdate((data) => {
+      handleStateUpdate(data.track, data.artDataUrl);
+    });
+
+    // Listen for theme switch commands relayed from dashboard
+    window.electronAPI.onSwitchTheme((data) => {
       if (currentTrack) {
         currentTrack.settings = currentTrack.settings || {};
-        if (e.data.customCss !== undefined) {
-          currentTrack.settings.customCss = e.data.customCss;
+        if (data.customCss !== undefined) {
+          currentTrack.settings.customCss = data.customCss;
         }
-        if (e.data.customThemes !== undefined) {
-          currentTrack.settings.customThemes = e.data.customThemes;
+        if (data.customThemes !== undefined) {
+          currentTrack.settings.customThemes = data.customThemes;
         }
-        if (e.data.customThemeId !== undefined) {
-          currentTrack.settings.activeCustomThemeId = e.data.customThemeId;
+        if (data.customThemeId !== undefined) {
+          currentTrack.settings.activeCustomThemeId = data.customThemeId;
         }
       }
-      renderShell(e.data.theme, e.data.orientation || 'horizontal');
+      renderShell(data.theme, data.orientation || 'horizontal');
       if (currentTrack) applyTrackToDOM(currentTrack);
-    }
-    if (e.data && e.data.type === 'update_settings') {
+    });
+
+    // Listen for settings updates relayed from dashboard
+    window.electronAPI.onUpdateSettings((data) => {
       if (currentTrack) {
-        currentTrack.settings = { ...currentTrack.settings, ...e.data.settings };
+        currentTrack.settings = { ...currentTrack.settings, ...data.settings };
         applyTrackToDOM(currentTrack);
       }
-    }
-  });
+    });
 
-  function connectWs() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
-    ws = new WebSocket(wsUrl);
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data);
-        if (msg.type === 'init' || msg.type === 'track_update') {
-          handleStateUpdate(msg.track);
-        }
-      } catch (e) {}
-    };
-
-    ws.onclose = () => {
-      setTimeout(connectWs, 2000);
-    };
+    // Get initial state on load
+    window.electronAPI.getInitialState().then((data) => {
+      if (data && data.track) {
+        handleStateUpdate(data.track, data.artDataUrl);
+      }
+    }).catch(() => {});
   }
 
   // Initial render
-  renderShell(paramTheme || 'vinyl', paramOrientation || 'horizontal');
-  connectWs();
-
-  fetch('/api/state')
-    .then((r) => r.json())
-    .then((data) => {
-      if (data && data.track) handleStateUpdate(data.track);
-    })
-    .catch(() => {});
+  renderShell('vinyl', 'horizontal');
 })();

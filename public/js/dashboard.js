@@ -20,12 +20,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const sourceItems = document.querySelectorAll('.source-pill[data-source]');
 
   // Action Buttons
-  const btnLaunchHud = document.getElementById('btn-launch-hud');
-  const btnNavDesktopHud = document.getElementById('btn-nav-desktop-hud');
-  const floatBtnText = document.getElementById('float-btn-text');
-  const btnCopyMaster = document.getElementById('btn-copy-master');
-  const btnNavCopyObs = document.getElementById('btn-nav-copy-obs');
-  const copyBtnText = document.getElementById('copy-btn-text');
+  const btnDesktopOverlay = document.getElementById('btn-desktop-overlay');
+  const btnObsOverlay = document.getElementById('btn-obs-overlay');
+  const btnNavDesktopOverlay = document.getElementById('btn-nav-desktop-overlay');
+  const btnNavObsOverlay = document.getElementById('btn-nav-obs-overlay');
 
   // Drawer Elements
   const settingsDrawer = document.getElementById('settings-drawer');
@@ -37,7 +35,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const drawerScriptContent = document.getElementById('drawer-script-content');
 
   // Form Controls
-  const toggleFloat = document.getElementById('toggle-float');
   const toggleAutoHide = document.getElementById('toggle-autohide');
   const toggleProgress = document.getElementById('toggle-progress');
   const toggleWave = document.getElementById('toggle-wave');
@@ -62,9 +59,9 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentOrientation = 'horizontal';
   let currentAccent = '#1db954';
   let currentBgMode = 'transparent';
-  let isFloating = false;
   let autoHideWhenPaused = false;
-  const masterObsUrl = `${window.location.origin}/overlay`;
+  let desktopOverlayActive = false;
+  let obsOverlayActive = false;
 
   function showToast(msg) {
     toast.textContent = msg;
@@ -74,42 +71,26 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 2500);
   }
 
-  function sendIpc(channel) {
-    try {
-      if (window.require) {
-        const { ipcRenderer } = window.require('electron');
-        ipcRenderer.send(channel);
-        return true;
-      }
-    } catch (e) {}
-    return false;
-  }
-
-  // Traffic Light actions
+  // Traffic Light actions — use preload IPC
   btnWinClose.addEventListener('click', () => {
-    if (!sendIpc('window-close')) window.close();
+    if (window.electronAPI) {
+      window.electronAPI.windowClose();
+    } else {
+      window.close();
+    }
   });
   btnWinMin.addEventListener('click', () => {
-    sendIpc('window-minimize');
+    if (window.electronAPI) window.electronAPI.windowMinimize();
   });
   btnWinMax.addEventListener('click', () => {
-    if (!sendIpc('window-maximize')) {
+    if (window.electronAPI) {
+      window.electronAPI.windowMaximize();
+    } else {
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(() => {});
       } else {
         document.exitFullscreen().catch(() => {});
       }
-    }
-  });
-
-  // Sync with iframe on load
-  previewFrame.addEventListener('load', () => {
-    if (previewFrame.contentWindow) {
-      previewFrame.contentWindow.postMessage({
-        type: 'switch_theme',
-        theme: currentTheme,
-        orientation: currentOrientation
-      }, '*');
     }
   });
 
@@ -150,34 +131,31 @@ document.addEventListener('DOMContentLoaded', () => {
           customThemes = customThemes.filter((t) => t.id !== toDeleteId);
 
           let nextTheme = currentTheme;
-          let nextCss = '';
           if (currentTheme === toDeleteId) {
             nextTheme = 'vinyl';
             currentTheme = 'vinyl';
             document.querySelectorAll('.chip-btn:not([data-custom-theme="true"])').forEach((c) => {
               c.classList.toggle('active', c.getAttribute('data-theme') === 'vinyl');
             });
-            if (previewFrame && previewFrame.contentWindow) {
-              previewFrame.contentWindow.postMessage({
-                type: 'switch_theme',
+            // Send theme switch to overlays
+            if (window.electronAPI) {
+              window.electronAPI.sendToOverlay('switch-theme', {
                 theme: 'vinyl',
                 orientation: 'horizontal',
                 customCss: ''
-              }, '*');
+              });
             }
           }
 
           renderCustomThemeChips();
 
-          fetch('/api/settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+          if (window.electronAPI) {
+            window.electronAPI.saveSettings({
               customThemes: customThemes,
               activeTheme: nextTheme,
-              customCss: nextCss
-            })
-          }).then(() => showToast(`Theme "${theme.name}" removed from tray`));
+              customCss: ''
+            }).then(() => showToast(`Theme "${theme.name}" removed from tray`));
+          }
           return;
         }
 
@@ -188,7 +166,18 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTheme = theme.id;
         currentOrientation = 'horizontal';
 
-        // 0ms instant preview update
+        // Send to overlay windows via main process relay
+        if (window.electronAPI) {
+          window.electronAPI.sendToOverlay('switch-theme', {
+            theme: 'custom',
+            customThemeId: theme.id,
+            orientation: currentOrientation,
+            customCss: theme.css,
+            customThemes: customThemes
+          });
+        }
+
+        // Update preview iframe
         if (previewFrame && previewFrame.contentWindow) {
           previewFrame.contentWindow.postMessage({
             type: 'switch_theme',
@@ -201,15 +190,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Save active theme to settings
-        fetch('/api/settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        if (window.electronAPI) {
+          window.electronAPI.saveSettings({
             activeTheme: theme.id,
             activeCustomThemeId: theme.id,
             customCss: theme.css
-          })
-        }).then(() => showToast(`✨ "${theme.name}" layout active`));
+          }).then(() => showToast(`✨ "${theme.name}" layout active`));
+        }
       });
 
       customChipsContainer.appendChild(btn);
@@ -227,7 +214,16 @@ document.addEventListener('DOMContentLoaded', () => {
         currentTheme = chip.getAttribute('data-theme');
         currentOrientation = chip.getAttribute('data-orientation') || 'horizontal';
 
-        // 0ms instant preview update
+        // Send to overlay windows via main process relay
+        if (window.electronAPI) {
+          window.electronAPI.sendToOverlay('switch-theme', {
+            theme: currentTheme,
+            orientation: currentOrientation,
+            customCss: ''
+          });
+        }
+
+        // Update preview iframe
         if (previewFrame && previewFrame.contentWindow) {
           previewFrame.contentWindow.postMessage({
             type: 'switch_theme',
@@ -237,15 +233,13 @@ document.addEventListener('DOMContentLoaded', () => {
           }, '*');
         }
 
-        // Broadcast to OBS & Desktop HUD
-        fetch('/api/settings', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        // Save to settings
+        if (window.electronAPI) {
+          window.electronAPI.saveSettings({
             activeTheme: currentTheme,
             orientation: currentOrientation
-          })
-        }).then(() => showToast(`${currentTheme.toUpperCase()} layout active`));
+          }).then(() => showToast(`${currentTheme.toUpperCase()} layout active`));
+        }
       };
     });
   }
@@ -261,63 +255,61 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Float on Desktop Toggle (Always on Top)
-  function toggleFloatOnDesktop() {
-    isFloating = !isFloating;
-    updateFloatUi();
-    if (!sendIpc('launch-desktop-hud', { float: isFloating })) {
-      fetch('/api/hud/launch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ float: isFloating })
-      }).catch(() => {});
-    }
-    showToast(isFloating ? 'Float on Desktop active' : 'Desktop overlay hidden');
-  }
-
-  function updateFloatUi() {
-    if (toggleFloat) toggleFloat.checked = isFloating;
-    if (btnLaunchHud) {
-      btnLaunchHud.classList.toggle('active', isFloating);
-    }
-    if (floatBtnText) {
-      floatBtnText.textContent = isFloating ? 'Floating (On)' : 'Float on Desktop';
+  // Desktop Overlay Toggle
+  function toggleDesktopOverlay() {
+    if (window.electronAPI) {
+      if (desktopOverlayActive) {
+        window.electronAPI.closeOverlay('desktop').then(() => {
+          desktopOverlayActive = false;
+          updateOverlayButtons();
+          showToast('Desktop overlay closed');
+        });
+      } else {
+        window.electronAPI.launchDesktopOverlay().then(() => {
+          desktopOverlayActive = true;
+          updateOverlayButtons();
+          showToast('Desktop overlay active — floating on your desktop');
+        });
+      }
     }
   }
 
-  if (btnLaunchHud) btnLaunchHud.addEventListener('click', toggleFloatOnDesktop);
-  if (btnNavDesktopHud) btnNavDesktopHud.addEventListener('click', toggleFloatOnDesktop);
-
-  if (toggleFloat) {
-    toggleFloat.addEventListener('change', () => {
-      isFloating = toggleFloat.checked;
-      updateFloatUi();
-      sendIpc('set-hud-float', isFloating);
-      fetch('/api/hud/launch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ float: isFloating })
-      }).catch(() => {});
-    });
+  // OBS Overlay Toggle
+  function toggleObsOverlay() {
+    if (window.electronAPI) {
+      if (obsOverlayActive) {
+        window.electronAPI.closeOverlay('obs').then(() => {
+          obsOverlayActive = false;
+          updateOverlayButtons();
+          showToast('OBS overlay closed');
+        });
+      } else {
+        window.electronAPI.launchObsOverlay().then(() => {
+          obsOverlayActive = true;
+          updateOverlayButtons();
+          showToast('OBS overlay active — select "TMO Overlay [OBS]" in OBS Window Capture');
+        });
+      }
+    }
   }
 
-  // Copy Master Link (Advanced / Optional)
-  function copyObsLink() {
-    navigator.clipboard.writeText(masterObsUrl).then(() => {
-      copyBtnText.textContent = 'Copied Link!';
-      btnCopyMaster.style.background = '#34c759';
-      btnCopyMaster.style.color = '#fff';
-      showToast('Link copied — paste into OBS Browser Source');
-      setTimeout(() => {
-        copyBtnText.textContent = 'Copy Link';
-        btnCopyMaster.style.background = '';
-        btnCopyMaster.style.color = '';
-      }, 2000);
-    });
+  function updateOverlayButtons() {
+    if (btnDesktopOverlay) {
+      btnDesktopOverlay.classList.toggle('active', desktopOverlayActive);
+      const textEl = btnDesktopOverlay.querySelector('span');
+      if (textEl) textEl.textContent = desktopOverlayActive ? 'Desktop Overlay (On)' : 'Desktop Overlay';
+    }
+    if (btnObsOverlay) {
+      btnObsOverlay.classList.toggle('active', obsOverlayActive);
+      const textEl = btnObsOverlay.querySelector('span');
+      if (textEl) textEl.textContent = obsOverlayActive ? 'OBS Overlay (On)' : 'OBS Overlay';
+    }
   }
 
-  btnCopyMaster.addEventListener('click', copyObsLink);
-  btnNavCopyObs.addEventListener('click', copyObsLink);
+  if (btnDesktopOverlay) btnDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
+  if (btnNavDesktopOverlay) btnNavDesktopOverlay.addEventListener('click', toggleDesktopOverlay);
+  if (btnObsOverlay) btnObsOverlay.addEventListener('click', toggleObsOverlay);
+  if (btnNavObsOverlay) btnNavObsOverlay.addEventListener('click', toggleObsOverlay);
 
   // Drawer Handlers
   function openDrawer(type) {
@@ -361,21 +353,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Save Settings from Drawer
   btnSaveDrawer.addEventListener('click', () => {
-    fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        floatOnDesktop: isFloating,
+    if (window.electronAPI) {
+      window.electronAPI.saveSettings({
         autoHideWhenPaused: toggleAutoHide.checked,
         showProgressBar: toggleProgress.checked,
         showVisualizer: toggleWave.checked,
         backgroundMode: currentBgMode,
         accentColor: currentAccent
-      })
-    }).then(() => {
-      showToast('Settings applied to OBS Capture and Desktop HUD');
-      closeDrawer();
-    });
+      }).then(() => {
+        showToast('Settings applied to overlay');
+        closeDrawer();
+      });
+    }
   });
 
   // CSS Sanitizer: Automatically strips markdown backticks if user copies from ChatGPT/Claude
@@ -395,14 +384,14 @@ You are an automated CSS generator for TMO (Track Music Overlay), a transparent 
 Your objective: Take the user's style request (even if it is just a single short line like "make me a flowing river-like style") and produce a COMPLETE, PROPORTIONALLY BALANCED, STREAM-READY CSS THEME.
 
 === CRITICAL OUTPUT FORMAT RULE (NON-NEGOTIABLE) ===
-1. Return ONLY pure, raw CSS inside a single \`\`\`css code block.
+1. Return ONLY pure, raw CSS inside a single \\\`\\\`\\\`css code block.
 2. DO NOT write ANY conversational intro, greeting ("Sure, here is..."), explanation, breakdown, or outro text.
 3. The user will click "Copy" directly on your code block and paste it into the software. ANY text outside the code block will break the user experience.
 
 === STRICT CONSTRAINTS & LIMITATIONS (WHAT YOU CANNOT DO) ===
 1. NO SOLID VIEWPORT BACKGROUND: <html> and <body> MUST remain 100% transparent (background: transparent !important;). Do not apply background colors or full-screen overlays to body or html.
 2. NO HTML OR JAVASCRIPT: You can only output CSS. You cannot add, delete, or modify DOM elements.
-3. NO LOCAL FILE PATHS: Do NOT reference local files (C:\\... or file:///). Use pure CSS gradients, SVG data URIs, or public HTTPS URLs.
+3. NO LOCAL FILE PATHS: Do NOT reference local files (C:\\\\... or file:///). Use pure CSS gradients, SVG data URIs, or public HTTPS URLs.
 4. DO NOT SET WIDTH ON #progress-fill: The width percentage (0% to 100%) is continuously calculated in real-time by JavaScript. NEVER write "width: ... !important" on #progress-fill (you may style height, color, border-radius, background gradients, glow, etc.).
 5. DO NOT HARDCODE SONG TEXT: Track titles and artists are dynamically rendered live streams. Do NOT use CSS content: "Song Title".
 6. DO NOT TARGET BUILT-IN THEMES: Do NOT write selectors for .theme-vinyl, .theme-cassette, or .theme-pill. All rules MUST be scoped strictly to #theme-root.theme-custom or #theme-root.
@@ -460,7 +449,6 @@ USER STYLE / THEME REQUEST:
 
   const btnCopyAiPrompt = document.getElementById('btn-copy-ai-prompt');
   const copyPromptText = document.getElementById('copy-prompt-text');
-  const chipCustomTheme = document.getElementById('chip-custom-theme');
 
   if (btnCopyAiPrompt) {
     btnCopyAiPrompt.addEventListener('click', () => {
@@ -506,7 +494,18 @@ USER STYLE / THEME REQUEST:
       document.querySelectorAll('.chip-btn').forEach((c) => c.classList.remove('active'));
       renderCustomThemeChips();
 
-      // Broadcast instant 0ms preview update
+      // Send to overlay windows via main process relay
+      if (window.electronAPI) {
+        window.electronAPI.sendToOverlay('switch-theme', {
+          theme: 'custom',
+          customThemeId: newThemeId,
+          orientation: currentOrientation,
+          customCss: cssCode,
+          customThemes: customThemes
+        });
+      }
+
+      // Update preview iframe
       if (previewFrame && previewFrame.contentWindow) {
         previewFrame.contentWindow.postMessage({
           type: 'switch_theme',
@@ -519,19 +518,17 @@ USER STYLE / THEME REQUEST:
       }
 
       // Save to settings
-      fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      if (window.electronAPI) {
+        window.electronAPI.saveSettings({
           customThemes: customThemes,
           activeTheme: newThemeId,
           activeCustomThemeId: newThemeId,
           customCss: cssCode
-        })
-      }).then(() => {
-        showToast(`✨ "${styleName}" added to tray & activated!`);
-        closeDrawer();
-      });
+        }).then(() => {
+          showToast(`✨ "${styleName}" added to tray & activated!`);
+          closeDrawer();
+        });
+      }
     });
   }
 
@@ -562,16 +559,14 @@ USER STYLE / THEME REQUEST:
       renderCustomThemeChips();
 
       // Save customThemes to settings without overriding current activeTheme
-      fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      if (window.electronAPI) {
+        window.electronAPI.saveSettings({
           customThemes: customThemes
-        })
-      }).then(() => {
-        showToast(`💾 "${styleName}" saved to tray!`);
-        closeDrawer();
-      });
+        }).then(() => {
+          showToast(`💾 "${styleName}" saved to tray!`);
+          closeDrawer();
+        });
+      }
     });
   }
 
@@ -584,37 +579,39 @@ USER STYLE / THEME REQUEST:
     });
   }
 
-  // Poll Playback State
-  function pollState() {
-    fetch('/api/state')
-      .then((r) => r.json())
-      .then((data) => {
-        const track = data.track || {};
-        if (track.title) {
-          bannerTitle.textContent = track.title;
-          bannerArtist.textContent = track.artist || 'Unknown Artist';
-          bannerServiceName.textContent = (track.platformName || 'AUDIO').toUpperCase();
-          if (track.artUrl) {
-            bannerCover.src = track.artUrl;
-          } else if (track.hasArt) {
-            bannerCover.src = `/api/current-art?t=${Date.now()}`;
-          }
+  // === IPC-BASED LIVE UPDATES (replaces HTTP polling) ===
 
-          const isPlaying = Boolean(track.isPlaying);
-          liveStatusText.textContent = `${(track.platformName || 'MUSIC').toUpperCase()} — ${isPlaying ? 'PLAYING' : 'PAUSED'}`;
-          liveDot.style.background = isPlaying ? (track.brandColor || '#34c759') : '#f59e0b';
-        } else {
-          liveStatusText.textContent = 'LISTENING FOR AUDIO';
-          liveDot.style.background = '#71717a';
-        }
-      })
-      .catch(() => {});
+  function updateBanner(track, artDataUrl) {
+    if (!track) return;
+    if (track.title) {
+      bannerTitle.textContent = track.title;
+      bannerArtist.textContent = track.artist || 'Unknown Artist';
+      bannerServiceName.textContent = (track.platformName || 'AUDIO').toUpperCase();
+      if (artDataUrl) {
+        bannerCover.src = artDataUrl;
+      } else if (track.artUrl) {
+        bannerCover.src = track.artUrl;
+      }
+
+      const isPlaying = Boolean(track.isPlaying);
+      liveStatusText.textContent = `${(track.platformName || 'MUSIC').toUpperCase()} — ${isPlaying ? 'PLAYING' : 'PAUSED'}`;
+      liveDot.style.background = isPlaying ? (track.brandColor || '#34c759') : '#f59e0b';
+    } else {
+      liveStatusText.textContent = 'LISTENING FOR AUDIO';
+      liveDot.style.background = '#71717a';
+    }
   }
 
-  // Load initial settings
-  fetch('/api/settings')
-    .then((r) => r.json())
-    .then((data) => {
+  // Live track updates from main process (replaces 1.2s polling)
+  if (window.electronAPI) {
+    window.electronAPI.onTrackUpdate((data) => {
+      updateBanner(data.track, data.artDataUrl);
+    });
+  }
+
+  // Load initial settings + state
+  if (window.electronAPI) {
+    window.electronAPI.getSettings().then((data) => {
       const s = data.settings || {};
       if (s.customThemes && Array.isArray(s.customThemes) && s.customThemes.length > 0) {
         customThemes = s.customThemes;
@@ -631,10 +628,6 @@ USER STYLE / THEME REQUEST:
           const mOrient = !chip.getAttribute('data-orientation') || chip.getAttribute('data-orientation') === currentOrientation;
           chip.classList.toggle('active', mTheme && mOrient);
         });
-      }
-      if (s.floatOnDesktop !== undefined) {
-        isFloating = Boolean(s.floatOnDesktop);
-        updateFloatUi();
       }
       if (s.backgroundMode) {
         currentBgMode = s.backgroundMode;
@@ -653,5 +646,21 @@ USER STYLE / THEME REQUEST:
       }
     });
 
-  setInterval(pollState, 1200);
+    // Get initial track state
+    window.electronAPI.getState().then((data) => {
+      if (data && data.track) {
+        updateBanner(data.track, data.artDataUrl);
+      }
+    });
+
+    // Check overlay states
+    window.electronAPI.isOverlayOpen('desktop').then((open) => {
+      desktopOverlayActive = open;
+      updateOverlayButtons();
+    });
+    window.electronAPI.isOverlayOpen('obs').then((open) => {
+      obsOverlayActive = open;
+      updateOverlayButtons();
+    });
+  }
 });
